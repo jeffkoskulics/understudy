@@ -74,7 +74,9 @@ SOP, or a list of the steps most likely to trip up a new hire.
 ```bash
 git clone https://github.com/jeffkoskulics/understudy
 cd understudy
-python3 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
+python3 -m venv .venv
+./.venv/bin/pip install --upgrade pip -q
+./.venv/bin/pip install -r requirements.txt
 swiftc -O helpers/ocr_mac.swift -o helpers/ocr_mac     # macOS OCR helper
 ```
 
