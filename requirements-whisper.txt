@@ -1,0 +1,11 @@
+# Optional: on-device transcription for `understudy transcribe`.
+#
+# Kept out of requirements.txt because it pulls in CTranslate2 and a few
+# hundred MB of wheels that the chat hand-off path does not need. Install it
+# only if you want `understudy transcribe`:
+#
+#     pip install -r requirements-whisper.txt
+#
+# The model itself is downloaded on first use and cached in
+# ~/.cache/huggingface; after that it runs offline.
+faster-whisper>=1.1

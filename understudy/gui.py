@@ -7,6 +7,11 @@ awkward already -- narrate their own work while a stranger watches. So the
 window states the two decisions that actually matter (which screen, where the
 files go), and after that offers one button per step in the order they happen.
 
+Transcription offers both routes in one place: a button that runs whisper here
+if it is installed, and below it the chat hand-off, which needs no model and
+no download. Neither is hidden behind the other, because which one is easier
+depends entirely on the machine it is being run on.
+
 The hand-off buttons put text on the clipboard rather than opening anything,
 because the destination is a chat window in a browser: there is nothing to
 open, only something to paste. The audio file is the one exception -- it has to
@@ -25,6 +30,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 from .record import DEFAULT_ROOT, Recorder
+from .transcribe import DEFAULT_MODEL as TRANSCRIBE_DEFAULT_MODEL
 
 PREVIEW_W = 260          # monitor thumbnail, max width in px
 PREVIEW_H = 165          # and max height -- a portrait screen must not stretch the window
@@ -100,6 +106,7 @@ class App(ttk.Frame):
         self.recorder = None
         self.session_dir = tk.StringVar(value="")
         self.status = tk.StringVar(value="Ready.")
+        self.whisper_model = tk.StringVar(value=TRANSCRIBE_DEFAULT_MODEL)
         self._preview_image = None      # kept alive; Tk does not own the ref
         self._working = False
         self._results = queue.Queue()   # background work -> main thread
@@ -290,9 +297,9 @@ class App(ttk.Frame):
         self._sync_buttons()
         self._refresh_preview()
 
-    # -- hand-off --------------------------------------------------------
+    # -- transcription and hand-off --------------------------------------
     def _build_handoff(self):
-        box = ttk.LabelFrame(self, text="3. Hand off to a chat LLM", padding=10)
+        box = ttk.LabelFrame(self, text="3. Transcribe the narration", padding=10)
         box.grid(row=3, column=0, sticky="nsew", pady=(10, 0))
         box.columnconfigure(0, weight=1)
         self.rowconfigure(3, weight=1)
@@ -305,8 +312,22 @@ class App(ttk.Frame):
                                                            padx=(8, 8))
         ttk.Button(row, text="Browse...", command=self._browse_session).grid(row=0, column=2)
 
+        local = ttk.Frame(box)
+        local.grid(row=1, column=0, sticky="w", pady=(10, 0))
+        self.transcribe_btn = ttk.Button(local, text="Transcribe on this machine",
+                                         command=self._transcribe)
+        self.transcribe_btn.pack(side="left")
+        ttk.Label(local, text="Model").pack(side="left", padx=(12, 6))
+        ttk.Combobox(local, textvariable=self.whisper_model, width=10,
+                     state="readonly",
+                     values=("tiny", "base", "small", "medium",
+                             "tiny.en", "base.en", "small.en")
+                     ).pack(side="left")
+
+        ttk.Label(box, text="Or hand the audio to a chat LLM instead:",
+                  foreground="#444").grid(row=2, column=0, sticky="w", pady=(12, 2))
         step1 = ttk.Frame(box)
-        step1.grid(row=1, column=0, sticky="w", pady=(10, 0))
+        step1.grid(row=3, column=0, sticky="w")
         self.prepare_btn = ttk.Button(step1, text="Prepare audio + prompt",
                                       command=self._prepare)
         self.prepare_btn.pack(side="left")
@@ -318,13 +339,13 @@ class App(ttk.Frame):
         self.reveal_audio_btn.pack(side="left", padx=(8, 0))
 
         ttk.Label(box, text="Paste the reply from the chat window here:",
-                  foreground="#444").grid(row=2, column=0, sticky="w", pady=(10, 2))
+                  foreground="#444").grid(row=4, column=0, sticky="w", pady=(10, 2))
         self.reply = tk.Text(box, height=6, wrap="word")
-        self.reply.grid(row=3, column=0, sticky="nsew")
-        box.rowconfigure(3, weight=1)
+        self.reply.grid(row=5, column=0, sticky="nsew")
+        box.rowconfigure(5, weight=1)
 
         step2 = ttk.Frame(box)
-        step2.grid(row=4, column=0, sticky="w", pady=(8, 0))
+        step2.grid(row=6, column=0, sticky="w", pady=(8, 0))
         self.merge_btn = ttk.Button(step2, text="Merge reply", command=self._merge)
         self.merge_btn.pack(side="left")
         self.pack_btn = ttk.Button(step2, text="Build workflow.md", command=self._pack)
@@ -418,6 +439,40 @@ class App(ttk.Frame):
         self._busy(False)
         self.status.set("Failed: %s" % exc)
         messagebox.showerror("Understudy", str(exc))
+
+    def _transcribe(self):
+        session = self._session()
+        if not session:
+            return
+        from .transcribe import TranscribeError, transcribe
+        model = self.whisper_model.get() or TRANSCRIBE_DEFAULT_MODEL
+
+        def done(info):
+            self._busy(False)
+            if not info["segments"]:
+                self.status.set("No narration found in this session; "
+                                "you can skip straight to Build workflow.md.")
+                return
+            msg = ("Transcribed %d of %d segments (%.0fs)."
+                   % (info["written"], info["segments"], info["speech_seconds"]))
+            if info["empty"]:
+                # Same contract as the paste path: a gap is narration that is
+                # absent, not narration shifted onto a neighbouring step.
+                msg += " Silent: %s." % ", ".join(map(str, info["empty"]))
+            self.status.set(msg + " Now build workflow.md.")
+            self._sync_buttons()
+
+        def work():
+            try:
+                return transcribe(session, model=model,
+                                  progress=lambda m: self.status.set(m))
+            except TranscribeError as exc:
+                # A missing package or an undownloadable model is a setup
+                # problem the user can fix, not a crash worth a traceback.
+                raise RuntimeError(str(exc))
+
+        self.status.set("Starting whisper...")
+        self._run(work, done)
 
     def _prepare(self):
         session = self._session()
@@ -518,6 +573,7 @@ class App(ttk.Frame):
             widget.configure(state="normal" if on and not busy else "disabled")
 
         ready = have and not recording
+        state(self.transcribe_btn, ready)
         state(self.prepare_btn, ready)
         state(self.copy_prompt_btn,
               ready and os.path.exists(os.path.join(session, "transcribe-prompt.txt")))

@@ -34,3 +34,7 @@ fi
 echo
 echo "Understudy is installed. Record a workflow with:"
 echo "    $root/bin/understudy record --out ~/Recordings"
+echo
+echo "Transcription hands off to a chat window by default. For on-device"
+echo "transcription instead (a few hundred MB more):"
+echo "    $root/.venv/bin/pip install -r requirements-whisper.txt"

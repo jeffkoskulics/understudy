@@ -126,6 +126,7 @@ After that it is one button per step, in the order they happen:
 | button | what it does |
 |---|---|
 | **Start / Stop recording** | the same capture the CLI runs, with a live frame count |
+| **Transcribe on this machine** | runs whisper locally, if it is installed |
 | **Prepare audio + prompt** | finds the speech segments and compresses the audio |
 | **Copy prompt** | puts the transcription prompt on the clipboard |
 | **Show audio file** | reveals the audio in the file manager, to drag into the chat |
@@ -161,14 +162,23 @@ Press Ctrl-C to stop.
 Turn it into something pasteable:
 
 ```bash
+./bin/understudy transcribe ~/Recordings/session-2026-09-18-1432  # whisper, here
+./bin/understudy pack       ~/Recordings/session-2026-09-18-1432  # -> workflow.md
+```
+
+Or, without installing a model, hand the audio to a chat window instead:
+
+```bash
 ./bin/understudy handoff ~/Recordings/session-2026-09-18-1432   # audio + prompt
 ./bin/understudy merge   ~/Recordings/session-2026-09-18-1432   # paste the reply
 ./bin/understudy pack    ~/Recordings/session-2026-09-18-1432   # -> workflow.md
 ```
 
+`transcribe` runs whisper on this machine and writes the transcript directly.
 `handoff` gives you a compressed audio file to drag into a chat session and a
-prompt to paste beside it. `merge` takes the reply back. `pack` writes
-`workflow.md`. If you have API access, skip `handoff` and `merge` entirely.
+prompt to paste beside it, and `merge` takes the reply back. Both write the
+same `transcript.json`, so `pack` cannot tell which route produced it. If you
+have API access, skip all of them and write that file yourself.
 
 Both paths write the same session folder, so you can start a recording in the
 GUI and pack it from a script, or the other way round.
@@ -243,6 +253,19 @@ This matters if you are recording a colleague at work, and it is deliberate:
 
 Python 3.9+, and on macOS the Xcode command line tools for the OCR helper.
 
+On-device transcription is optional and installed separately, because
+CTranslate2 and its wheels are a few hundred MB that the chat hand-off path
+does not need:
+
+```bash
+pip install -r requirements-whisper.txt
+```
+
+The model itself is downloaded on first use and cached in
+`~/.cache/huggingface`; after that it runs offline like everything else.
+`base` is the default and is roughly realtime on a laptop CPU; `small.en` is
+noticeably better on English narration and about three times slower.
+
 The GUI needs Tkinter, which is part of the standard library on macOS and
 Windows. Some Linux distributions package it separately (`apt install
 python3-tk`); the command line works without it.
@@ -267,6 +290,7 @@ of the value is.
 | Recorder — frames, dedup, events, audio | working |
 | OCR — macOS Vision | working |
 | Transcription — chat hand-off and merge | working |
+| Transcription — on-device, faster-whisper | working |
 | Packer — steps, delta text | working |
 | Contact sheets — cropped, annotated screenshots | not started |
 | Windows OCR helper | not started |
