@@ -1,0 +1,8 @@
+# Virtualenv: rebuilt from requirements.txt, never committed.
+# (An earlier auto-commit added ~2000 files of it, including compiled .so
+# binaries; this file plus the untracking in this commit undoes that.)
+.venv/
+
+# Compiled per-OS helper binaries: built from the .swift sources beside them.
+helpers/ocr_mac
+helpers/*.dSYM
