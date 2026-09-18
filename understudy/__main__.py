@@ -5,6 +5,7 @@ import sys
 def usage():
     print(__doc__.strip())
     print("""
+  understudy gui                 open the control panel (no flags to learn)
   understudy record [options]    capture a session
   understudy handoff <session>   prepare audio + prompt for a chat LLM
   understudy merge   <session>   merge a pasted transcript (reads stdin)
@@ -17,6 +18,10 @@ def main(argv):
     if not argv:
         return usage()
     cmd, rest = argv[0], argv[1:]
+
+    if cmd == "gui":
+        from .gui import main as gui_main
+        return gui_main(rest)
 
     if cmd == "record":
         from .record import main as record_main

@@ -1,6 +1,12 @@
-"""Recorder entry point: wires the streams together and owns the session."""
+"""Recorder entry point: wires the streams together and owns the session.
+
+The wiring lives in `Recorder` rather than in `main()` so that the GUI can
+drive exactly the same recording path as the command line. A recording is
+three independent streams -- frames, events, audio -- sharing one clock and one
+session directory; starting and stopping them in the right order, and writing
+the manifest that ties them together, is the whole job.
+"""
 import argparse
-import os
 import platform
 import signal
 import sys
@@ -14,6 +20,77 @@ from .frontmost import get_frontmost
 from .session import Session
 
 DEFAULT_ROOT = "~/Recordings"
+
+
+class Recorder:
+    """One recording session. Start it, poll it, stop it.
+
+    Stopping is idempotent and always writes the manifest, because a session
+    without one cannot be handed off: `handoff` reads the audio offset from it
+    to align narration against the frames.
+    """
+
+    def __init__(self, out=DEFAULT_ROOT, name=None, fps=2.0, monitor=1,
+                 min_change=0.004, quality=92, heartbeat=120.0,
+                 audio=True, audio_device=None, keys="metadata"):
+        self.clock = Clock()
+        self.session = Session(out, name)
+        self.fps = fps
+        self.monitor = monitor
+        self.keys = keys
+        frontmost = get_frontmost()
+        self.cap = CaptureLoop(self.clock, self.session, monitor=monitor, fps=fps,
+                               min_change=min_change, heartbeat=heartbeat,
+                               jpeg_quality=quality, frontmost=frontmost)
+        self.ev = EventRecorder(self.clock, self.session.events, frontmost,
+                                key_mode=keys, on_activity=self.cap.on_activity)
+        self.audio = (AudioRecorder(self.clock, self.session.audio_path, audio_device)
+                      if audio else None)
+        self._settings = {"min_change": min_change, "heartbeat": heartbeat,
+                          "jpeg_quality": quality}
+        self._stopped = False
+
+    @property
+    def dir(self):
+        return self.session.dir
+
+    def start(self):
+        self.cap.start()
+        self.ev.start()
+        if self.audio:
+            self.audio.start()
+
+    def status(self):
+        """(elapsed seconds, frames kept, frames sampled)."""
+        return self.clock.t(), self.cap.kept, self.cap.sampled
+
+    def stop(self):
+        """Stop every stream, write the manifest, return the session dir."""
+        if self._stopped:
+            return self.session.dir
+        self._stopped = True
+        self.ev.stop()
+        self.cap.stop()
+        if self.audio:
+            self.audio.stop()
+            self.audio.join(timeout=5)
+        self.cap.join(timeout=5)
+
+        self.session.write_manifest({
+            "name": self.session.name,
+            "started_at": self.clock.start_iso,
+            "duration": round(self.clock.t(), 3),
+            "platform": {"system": platform.system(), "release": platform.release(),
+                         "machine": platform.machine()},
+            "capture": {"fps": self.fps, "monitor": self.monitor,
+                        "geometry": self.cap.geometry, **self._settings},
+            "frames": {"kept": self.cap.kept, "sampled": self.cap.sampled,
+                       "moves_suppressed": self.cap.moves_suppressed},
+            "events": {"key_mode": self.keys},
+            "audio": self.audio.info() if self.audio else None,
+        })
+        self.session.close()
+        return self.session.dir
 
 
 def build_parser():
@@ -41,17 +118,10 @@ def main(argv=None):
     if not 0.5 <= args.fps <= 10:
         sys.exit("--fps must be between 0.5 and 10")
 
-    clock = Clock()
-    session = Session(args.out, args.name)
-    frontmost = get_frontmost()
-
-    cap = CaptureLoop(clock, session, monitor=args.monitor, fps=args.fps,
-                      min_change=args.min_change, heartbeat=args.heartbeat,
-                      jpeg_quality=args.quality, frontmost=frontmost)
-    ev = EventRecorder(clock, session.events, frontmost,
-                       key_mode=args.keys, on_activity=cap.on_activity)
-    audio = None if args.no_audio else AudioRecorder(clock, session.audio_path,
-                                                     args.audio_device)
+    rec = Recorder(out=args.out, name=args.name, fps=args.fps, monitor=args.monitor,
+                   min_change=args.min_change, quality=args.quality,
+                   heartbeat=args.heartbeat, audio=not args.no_audio,
+                   audio_device=args.audio_device, keys=args.keys)
 
     stopping = {"flag": False}
 
@@ -61,50 +131,25 @@ def main(argv=None):
     signal.signal(signal.SIGINT, request_stop)
     signal.signal(signal.SIGTERM, request_stop)
 
-    cap.start()
-    ev.start()
-    if audio:
-        audio.start()
-
-    print("Recording -> %s" % session.dir)
+    rec.start()
+    print("Recording -> %s" % rec.dir)
     print("Press Ctrl-C to stop.")
-    t_end = args.duration
     try:
         while not stopping["flag"]:
             time.sleep(0.25)
-            if t_end is not None and clock.t() >= t_end:
+            t, kept, sampled = rec.status()
+            if args.duration is not None and t >= args.duration:
                 break
             print("\r  %5.1fs  %d frames kept / %d sampled   "
-                  % (clock.t(), cap.kept, cap.sampled), end="", flush=True)
+                  % (t, kept, sampled), end="", flush=True)
     finally:
         print()
-        ev.stop()
-        cap.stop()
-        if audio:
-            audio.stop()
-            audio.join(timeout=5)
-        cap.join(timeout=5)
+        rec.stop()
 
-        session.write_manifest({
-            "name": session.name,
-            "started_at": clock.start_iso,
-            "duration": round(clock.t(), 3),
-            "platform": {"system": platform.system(), "release": platform.release(),
-                         "machine": platform.machine()},
-            "capture": {"fps": args.fps, "monitor": args.monitor,
-                        "min_change": args.min_change, "heartbeat": args.heartbeat,
-                        "jpeg_quality": args.quality, "geometry": cap.geometry},
-            "frames": {"kept": cap.kept, "sampled": cap.sampled,
-                       "moves_suppressed": cap.moves_suppressed},
-            "events": {"key_mode": args.keys},
-            "audio": audio.info() if audio else None,
-        })
-        session.close()
-
-    kept, sampled = cap.kept, cap.sampled
+    _, kept, sampled = rec.status()
     saved = (1 - kept / sampled) * 100 if sampled else 0
     print("Saved %d frames (%.0f%% of samples deduplicated) to %s"
-          % (kept, saved, session.dir))
+          % (kept, saved, rec.dir))
     return 0
 
 

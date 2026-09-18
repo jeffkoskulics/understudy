@@ -109,7 +109,44 @@ executables in `.venv\Scripts\`, and `swiftc` is macOS-only.
 work, but the OCR helper is macOS-only, so `pack` cannot yet read text off the
 frames on Windows.
 
-Then record a workflow, narrating as you go:
+Then open the control panel:
+
+```bash
+./bin/understudy gui
+```
+
+It asks the two questions that matter — **which monitor** to record and **where
+to put the files** — and shows a thumbnail of the chosen screen, because two
+monitors of the same size are indistinguishable from their geometry alone and
+picking the wrong one is only discovered after the expert has finished
+narrating.
+
+After that it is one button per step, in the order they happen:
+
+| button | what it does |
+|---|---|
+| **Start / Stop recording** | the same capture the CLI runs, with a live frame count |
+| **Prepare audio + prompt** | finds the speech segments and compresses the audio |
+| **Copy prompt** | puts the transcription prompt on the clipboard |
+| **Show audio file** | reveals the audio in the file manager, to drag into the chat |
+| **Merge reply** | takes the pasted reply back |
+| **Build workflow.md** | runs the OCR and packing |
+| **Copy workflow.md** | puts the finished walkthrough on the clipboard |
+
+The hand-off buttons copy to the clipboard rather than opening anything,
+because the destination is a chat window in a browser: there is nothing to
+open, only something to paste. Audio is the exception — it has to be dragged
+in — so that button reveals the file instead.
+
+Buttons that cannot work yet are greyed out, so the order is never in doubt.
+The GUI is Tkinter, which ships with Python on all three platforms, so it adds
+nothing to `requirements.txt`.
+
+---
+
+### Or from the command line
+
+Record a workflow, narrating as you go:
 
 ```bash
 ./bin/understudy record --out ~/Recordings
@@ -132,6 +169,9 @@ Turn it into something pasteable:
 `handoff` gives you a compressed audio file to drag into a chat session and a
 prompt to paste beside it. `merge` takes the reply back. `pack` writes
 `workflow.md`. If you have API access, skip `handoff` and `merge` entirely.
+
+Both paths write the same session folder, so you can start a recording in the
+GUI and pack it from a script, or the other way round.
 
 ---
 
@@ -203,6 +243,10 @@ This matters if you are recording a colleague at work, and it is deliberate:
 
 Python 3.9+, and on macOS the Xcode command line tools for the OCR helper.
 
+The GUI needs Tkinter, which is part of the standard library on macOS and
+Windows. Some Linux distributions package it separately (`apt install
+python3-tk`); the command line works without it.
+
 macOS needs two one-time grants in System Settings → Privacy & Security:
 
 | grant | needed for |
@@ -226,10 +270,10 @@ of the value is.
 | Packer — steps, delta text | working |
 | Contact sheets — cropped, annotated screenshots | not started |
 | Windows OCR helper | not started |
-| GUI | not started |
+| GUI — monitor picker, destination, copy buttons | working |
 
-Tested on macOS (Intel). The Windows backends for window tracking are written
-but untested.
+Tested on macOS (Intel); the GUI was additionally exercised end to end on
+Linux. The Windows backends for window tracking are written but untested.
 
 This is early. It works end to end and the numbers above are real measurements,
 not projections, but it has been exercised on a handful of sessions rather than
