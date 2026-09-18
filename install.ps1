@@ -11,17 +11,17 @@ $ErrorActionPreference = 'Stop'
 function Find-Python {
     # The Microsoft Store stub named python.exe exits 9009 and opens the Store,
     # so a plain Get-Command is not enough -- each candidate is actually run.
-    foreach ($cmd in @('py -3', 'python', 'python3')) {
-        $parts = $cmd.Split(' ')
-        $exe = $parts[0]
-        $args = @($parts[1..($parts.Length - 1)]) | Where-Object { $_ }
+    foreach ($candidate in @(@('py', '-3'), @('python'), @('python3'))) {
+        $exe = $candidate[0]
+        $prefix = @($candidate | Select-Object -Skip 1)
         if (-not (Get-Command $exe -ErrorAction SilentlyContinue)) { continue }
+        $v = $null
         try {
-            $v = & $exe @args -c "import sys; print('%d.%d' % sys.version_info[:2])" 2>$null
+            $v = & $exe @prefix -c "import sys; print('%d.%d' % sys.version_info[:2])" 2>$null
         } catch { continue }
         if ($LASTEXITCODE -ne 0 -or -not $v) { continue }
-        $parsed = [version]$v
-        if ($parsed -ge [version]'3.9') { return ,@($exe) + $args }
+        try { $parsed = [version]([string]$v).Trim() } catch { continue }
+        if ($parsed -ge [version]'3.9') { return ,$candidate }
     }
     return $null
 }
@@ -58,7 +58,9 @@ $venv = Join-Path $root '.venv'
 $venvPython = Join-Path $venv 'Scripts\python.exe'
 if (-not (Test-Path $venvPython)) {
     Write-Host "Creating virtual environment in $venv"
-    & $python[0] @($python[1..($python.Length - 1)]) -m venv $venv
+    $pythonExe = $python[0]
+    $pythonArgs = @($python | Select-Object -Skip 1)
+    & $pythonExe @pythonArgs -m venv $venv
     if ($LASTEXITCODE -ne 0) { exit 1 }
 }
 
