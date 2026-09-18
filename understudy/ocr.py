@@ -25,6 +25,11 @@ def helper_path():
     path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                         "helpers", name)
     if not os.path.exists(path):
+        if sys.platform == "win32":
+            raise RuntimeError(
+                "OCR helper not built: %s\n"
+                "  The Windows OCR helper is not written yet -- recording works,\n"
+                "  but packing a session needs text off the frames." % path)
         raise RuntimeError(
             "OCR helper not built: %s\n  build it with:\n"
             "    swiftc -O helpers/ocr_mac.swift -o helpers/ocr_mac" % path)

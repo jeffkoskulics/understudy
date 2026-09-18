@@ -71,14 +71,43 @@ SOP, or a list of the steps most likely to trip up a new hire.
 
 ## Quickstart
 
+### macOS / Linux
+
 ```bash
-git clone https://github.com/jeffkoskulics/understudy
-cd understudy
-python3 -m venv .venv
-./.venv/bin/pip install --upgrade pip -q
-./.venv/bin/pip install -r requirements.txt
-swiftc -O helpers/ocr_mac.swift -o helpers/ocr_mac     # macOS OCR helper
+curl -fsSL https://raw.githubusercontent.com/jeffkoskulics/understudy/main/install.sh | sh
 ```
+
+That clones the repo into `./understudy`, creates a virtualenv, installs the
+dependencies, and on macOS builds the Vision OCR helper. From an existing
+clone, run `sh install.sh` instead.
+
+### Windows
+
+Open PowerShell and run:
+
+```powershell
+iwr -useb https://raw.githubusercontent.com/jeffkoskulics/understudy/main/install.ps1 | iex
+```
+
+Or download [install.ps1](https://raw.githubusercontent.com/jeffkoskulics/understudy/main/install.ps1),
+right-click it and choose **Run with PowerShell**. If PowerShell refuses to run
+the script, allow it for that one session:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -Bypass
+```
+
+You need [Python 3.9+](https://www.python.org/downloads/windows/) (tick *Add
+python.exe to PATH* in its installer) and [Git](https://git-scm.com/download/win).
+
+The commands below are written for a Unix shell. On Windows use
+`bin\understudy.cmd` in place of `./bin/understudy` — the `./.venv/bin/...`
+paths in older instructions do not exist on Windows, where the venv puts its
+executables in `.venv\Scripts\`, and `swiftc` is macOS-only.
+
+**Windows is partly supported today:** recording, window tracking and audio
+work, but the OCR helper is macOS-only, so `pack` cannot yet read text off the
+frames on Windows.
 
 Then record a workflow, narrating as you go:
 
