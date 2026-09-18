@@ -1,14 +1,14 @@
-"""Unified entry point: record, hand off, merge, pack."""
+"""understudy - capture a GUI workflow and turn it into teaching material."""
 import sys
 
 
 def usage():
     print(__doc__.strip())
     print("""
-  python -m wfcap record [options]      capture a session
-  python -m wfcap handoff  <session>    prepare audio + prompt for a chat LLM
-  python -m wfcap merge    <session>    merge a pasted transcript (reads stdin)
-  python -m wfcap pack     <session>    build workflow.md for pasting
+  understudy record [options]    capture a session
+  understudy handoff <session>   prepare audio + prompt for a chat LLM
+  understudy merge   <session>   merge a pasted transcript (reads stdin)
+  understudy pack    <session>   build workflow.md, ready to paste
 """)
     return 2
 
@@ -34,7 +34,7 @@ Next:
   1. Open a chat session with a model that accepts audio uploads.
   2. Drag in the audio file above, and paste the contents of the prompt file.
   3. Copy the whole reply, then run:
-       python -m wfcap merge %s
+       understudy merge %s
      and paste it in, ending with Ctrl-D.""" % rest[0])
         return 0
 

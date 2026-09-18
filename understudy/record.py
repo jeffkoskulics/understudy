@@ -17,7 +17,7 @@ DEFAULT_ROOT = "~/Recordings"
 
 
 def build_parser():
-    p = argparse.ArgumentParser(prog="wfcap", description="Capture a GUI workflow for AI analysis.")
+    p = argparse.ArgumentParser(prog="understudy", description="Capture a GUI workflow for AI analysis.")
     p.add_argument("--out", default=DEFAULT_ROOT, help="folder to save sessions into")
     p.add_argument("--name", default=None, help="session name (default: timestamp)")
     p.add_argument("--fps", type=float, default=2.0, help="capture rate, 2-4")

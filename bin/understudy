@@ -1,0 +1,9 @@
+#!/bin/sh
+# Understudy launcher. Prefers the project venv so the tool runs straight from
+# a clone, without the caller having to activate anything first.
+here=$(cd "$(dirname "$0")/.." && pwd)
+cd "$here" || exit 1
+if [ -x "$here/.venv/bin/python" ]; then
+    exec "$here/.venv/bin/python" -m understudy "$@"
+fi
+exec python3 -m understudy "$@"

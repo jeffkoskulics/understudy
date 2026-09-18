@@ -1,177 +1,211 @@
-# wfcap — GUI workflow capture for AI teaching materials
+# Understudy
 
-Records someone demonstrating a workflow in a GUI application — screen,
-clicks, keystrokes and narration, all on one time base — then compresses the
-result into something you can paste into a chat session with an LLM.
+**Your expert performs the workflow once. Your trainee gets the script.**
 
-The compression is the point. A 30-minute recording holds roughly 200,000
-tokens of on-screen text. This gets it to about 30,000: one paste, no API key
-required.
+Understudy watches someone do a job in a GUI application — every click, every
+keystroke, every window, and what they say while they do it — and turns it into
+a written walkthrough an LLM can read.
 
-Built for a specific shape of problem: an application structured like an
-operating system, with features spread across many windows, driven by a lot of
-manual pointing, clicking and file manipulation — the kind of workflow that is
-tedious to document by hand and poorly served by a screen recording nobody
-watches.
+No API key. No cloud service. No procurement ticket. It runs on the machine,
+and nothing leaves it until you decide to paste something.
 
-## How it works
+---
 
-    record  ->  handoff  ->  merge  ->  pack  ->  workflow.md
+## The problem it solves
 
-1. **record** — samples the screen at 2–4 fps and keeps a frame only when
-   something meaningful changed. Clicks, typing runs and window switches are
-   recorded alongside, sharing a monotonic clock with the audio.
-2. **handoff** — compresses the audio and writes a prompt to paste beside it,
-   for any chat model that accepts audio uploads.
-3. **merge** — takes the reply back, aligned to speech boundaries found
-   locally, so narration lines up with what was on screen.
-4. **pack** — OCRs only the frames that matter and emits one entry per user
-   action, grouped by window.
+Somewhere in your organisation is a person who knows how to do a thing. They
+open six windows in some particular order, they know which of the four
+identical-looking dialogs is the right one, and they know the one field that
+must be filled before the other or it silently fails.
 
-## Install
+That knowledge is not written down. It probably cannot be written down by the
+person who has it, because they stopped noticing the hard parts years ago.
 
-Requires Python 3.9+ and, on macOS, the Xcode command line tools.
+The usual answers do not work:
 
-    python3 -m venv .venv
-    ./.venv/bin/pip install -r requirements.txt
-    swiftc -O helpers/ocr_mac.swift -o helpers/ocr_mac   # macOS OCR helper
+- **Screen recordings** capture everything and explain nothing. Nobody watches
+  a 40-minute video to learn one procedure.
+- **Writing documentation** costs the expert a day per workflow, and they
+  will not do it.
+- **Feeding video to an LLM** is not practical for most people, and a
+  30-minute session is roughly 200,000 tokens of on-screen text.
 
-## Status
+Understudy records the session properly, then compresses it by about 7x until
+it fits in a single chat message. The expert does the job once, narrating as
+they go. Twenty minutes later there is a draft procedure.
 
-| Stage | State |
+---
+
+## What the output looks like
+
+`workflow.md`, ready to paste into any chat session:
+
+```markdown
+## Vault Manager — Batch Import
+
+**S014** [4:12] click "Import from Staging…"
+  - said: Always check the staging folder date first, it's the one thing
+          that bites people.
+  - new: Import from Staging | Source folder | Validate on import | Cancel | OK
+
+**S015** [4:19] type 24 characters over 6.2s
+  - said: So that's the batch ID, and it has to match the folder name exactly.
+  - new: /vault/staging/2026-Q1-B
+
+**S016** [4:31] click "Validate on import"
+  - said: People skip this and then spend an afternoon working out why the
+          totals are off.
+
+**S017** [4:36] click "OK"
+  - new: Importing 1,284 records… | Elapsed 0:03 | Cancel
+```
+
+*(Illustrative — the format is real, the application is not.)*
+
+Every step is one user action, tagged with an id, the control that was
+clicked, what appeared on screen as a result, and what the expert said while
+doing it. Hand that to an LLM and ask for a training guide, a checklist, an
+SOP, or a list of the steps most likely to trip up a new hire.
+
+---
+
+## Quickstart
+
+```bash
+git clone https://github.com/jeffkoskulics/understudy
+cd understudy
+python3 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
+swiftc -O helpers/ocr_mac.swift -o helpers/ocr_mac     # macOS OCR helper
+```
+
+Then record a workflow, narrating as you go:
+
+```bash
+./bin/understudy record --out ~/Recordings
+```
+
+```
+Recording -> ~/Recordings/session-2026-09-18-1432
+Press Ctrl-C to stop.
+  3:41  62 frames kept / 441 sampled
+```
+
+Turn it into something pasteable:
+
+```bash
+./bin/understudy handoff ~/Recordings/session-2026-09-18-1432   # audio + prompt
+./bin/understudy merge   ~/Recordings/session-2026-09-18-1432   # paste the reply
+./bin/understudy pack    ~/Recordings/session-2026-09-18-1432   # -> workflow.md
+```
+
+`handoff` gives you a compressed audio file to drag into a chat session and a
+prompt to paste beside it. `merge` takes the reply back. `pack` writes
+`workflow.md`. If you have API access, skip `handoff` and `merge` entirely.
+
+---
+
+## Why not just record the screen
+
+Because the interesting thing is not the pixels.
+
+**It keeps frames that matter.** Sampling runs at 2–4 fps, but a frame is only
+kept when something meaningful changed — measured against the last *kept*
+frame, so a slow redraw cannot creep past the threshold. A blinking cursor
+scores 0.0005 and is dropped. A dialog opening scores 0.088 and is kept.
+Typical sessions discard 70–90% of samples.
+
+**It knows a window move from a window change.** Dragging a window redraws most
+of the screen and means nothing. Understudy suppresses the drag and records one
+frame where the window landed.
+
+**It reads the clicks, not just the screen.** A click on a button that does not
+visibly change is invisible to pixel diffing. Understudy records the
+coordinate, then finds the OCR text under it — so the step says
+`click "Validate on import"`, not `click at (412, 388)`.
+
+**It uses the window title as structure.** In applications built like an
+operating system — features scattered across dozens of windows — the title bar
+announces each step for free, with no OCR at all.
+
+---
+
+## The compression, measured
+
+From a real session, per 30 minutes of recording:
+
+| stage | ~tokens |
 |---|---|
-| 1. Recorder (frames, dedup, events, audio) | **working** |
-| 2a. OCR (macOS Vision, parallel) | **working** |
-| 2b. Transcription (chat hand-off + merge) | **working** |
-| 3. Packer (steps, delta text) | **working** |
-| 3b. Contact sheets (cropped, annotated) | not started |
-| 4. Handoff CLI + paste-back merge | **working** |
-| 4b. Handoff GUI | not started |
+| raw OCR of every frame | 203,000 |
+| naive frame-to-frame delta | 92,000 |
+| window-keyed delta | 79,000 |
+| **+ step segmentation** | **33,000** |
+| **+ crop to changed region** | **26,000** |
 
-Tested on macOS (Intel). The Windows backends for window tracking are written
-but untested, and the Windows OCR helper is not yet written.
+Most of the win is step segmentation: one entry per user action instead of one
+per frame. Delta encoding measured between 1.0x and 2.6x depending on the
+session and is not something to rely on.
 
-## Run
+Steps are chosen *before* OCR runs, so only frames a step actually cites get
+recognised — on the reference session, 21 frames instead of 52, cutting
+processing from 171s to 51s.
 
-    ./record.command --out ~/Recordings
-
-Options: `--fps 2` (2–4), `--min-change 0.004`, `--monitor 1`,
-`--keys metadata|full`, `--no-audio`, `--duration N`.
-
-## Permissions
-
-macOS needs two grants in System Settings > Privacy & Security, both one-time:
-
-- **Screen Recording** — for frames, and for window *titles*
-- **Accessibility** — for clicks and keystrokes
-
-Without Accessibility the recorder still works, but loses click coordinates,
-which the packer needs to name the control the user pressed.
-
-Windows needs neither.
-
-## Session layout
-
-    session-YYYY-MM-DD-HHMMSS/
-      manifest.json    config, geometry, clock start, audio offset
-      frames/000123.jpg
-      frames.jsonl     idx, t, duration, reason, change, bbox, app, window,
-                       window_id, window_bounds
-      events.jsonl     clicks, scrolls, typing runs, structural keys
-      audio.wav        16 kHz mono, continuous
-
-Each frame carries a `reason`:
-
-| reason | meaning |
-|---|---|
-| `window-switch` | the frontmost window changed identity |
-| `click` / `post-click` / `input` | the user acted; kept even if nothing visibly changed |
-| `window-move` | a drag or resize, after the bounds settled |
-| `diff` | enough pixels changed on their own |
-| `heartbeat` | nothing changed for a long time; anchors idle stretches |
-
-Window drags and resizes are *suppressed* while in flight and recorded as a
-single frame once the bounds hold still, so shuffling windows around does not
-flood the session with near-duplicates. `window_id` is recorded so a later
-stage can diff a window against the last time that same window was in front,
-rather than against whatever unrelated window happened to precede it.
-
-`t` is seconds from session start on a monotonic clock, shared by all three
-streams. Every dropped frame extends the previous kept frame's `duration`, so
-idle time is represented rather than missing.
-
-## Full pipeline
-
-    python -m wfcap record --out ~/Recordings
-    python -m wfcap handoff ~/Recordings/session-...   # audio + prompt
-    python -m wfcap merge   ~/Recordings/session-...   # paste the reply
-    python -m wfcap pack    ~/Recordings/session-...   # -> workflow.md
-
-### Transcription without an API
-
-`handoff` compresses the audio (`afconvert` on macOS, `ffmpeg` elsewhere --
-2.2 MB to 215 KB on the reference session, so 30 minutes lands near 5 MB) and
-writes a prompt to paste alongside it.
-
-A chat reply has no timestamps, but narration is only useful lined up against
-the steps it describes. So speech boundaries are found locally by energy
-(`speech.py`) and the model is asked for exactly one line per segment:
-
-    1| Okay so I'm going to start by opening the terminal.
-    2| And then we check whether gh is on the path.
-
-Alignment is then exact by construction. `merge` ignores the prose and code
-fences a chat reply comes wrapped in, and reports any segment the model
-dropped rather than letting the remaining lines shift onto the wrong steps.
-
-## Pack a session
-
-    ./.venv/bin/python -m wfcap.pack ~/Recordings/session-YYYY-MM-DD-HHMMSS
-
-Writes two files beside the recording:
-
-- `workflow.md` — one entry per user action, grouped by window. This is the
-  file to paste into a chat session.
-- `steps.json` — the same steps with ids, so an answer citing `S007` can be
-  merged back against the frame it came from.
-
-Steps are chosen *before* OCR runs, so only the frames a step cites are
-recognised. On the reference session that is 21 frames instead of 52, and
-cuts packing from 171 s to 51 s — a bigger saving than parallelism gave.
-
-## Measured on a real 79 s session
-
-52 frames kept from 174 sampled (70% deduplicated), 6 distinct windows.
-OCR output, and what each packing stage removes:
-
-| encoding | ~tokens | vs raw | 30-min estimate |
-|---|---|---|---|
-| raw OCR, every frame | 26,396 | 1.0x | ~203,000 |
-| naive frame-to-frame delta | 11,941 | 2.2x | ~92,000 |
-| window-keyed delta | 10,315 | 2.6x | ~79,000 |
-| + step segmentation | 1,443 | 18x | ~33,000 |
-| + crop to change bbox | **1,142** | **23x** | **~26,000** |
-
-Two findings worth keeping:
-
-*Naive delta encoding is unreliable.* It measured 1.0x (no compression at
-all) on an earlier session that switched apps constantly, and 2.2x here.
-Keying the diff on `window_id` -- comparing a window against the last time
-that same window was in front -- is steadier but only ~16% better than naive.
-Neither is where the compression comes from.
-
-*The compression comes from step segmentation.* Emitting one entry per user
-action rather than per frame is worth ~7x on its own, and it is what makes a
-session pasteable. It depends entirely on the input event stream, and so on
-the macOS Accessibility grant.
-
-*OCR is the bottleneck and parallelism barely helps.* 4.5 s/frame with one
-worker, 3.3 s/frame with four -- Vision appears to be GPU-bound, not CPU-bound.
-The real fix is ordering: segment into steps first, then OCR only the frames
-a step actually cites (~18 of 52 here), rather than OCRing everything.
+---
 
 ## Privacy
 
-Keystrokes are recorded as metadata only (field, duration, character count)
-plus structural keys (Tab, Enter, Backspace). `--keys full` records typed
-characters and should be treated as sensitive.
+This matters if you are recording a colleague at work, and it is deliberate:
+
+- **Keystrokes are not logged.** A typing run is recorded as *what field, how
+  long, how many characters* — not the characters. Typed values usually come
+  back from OCR of the resulting screen anyway. `--keys full` records the
+  characters, and should be treated as sensitive.
+- **Nothing is uploaded.** Capture, OCR and packing are entirely local. The
+  only data that leaves the machine is what you choose to paste.
+- **The output is reviewable text.** Before sharing a `workflow.md`, you can
+  read every line of it. That is not true of a video.
+- **Recordings stay put.** Sessions are written to a folder you name and are
+  never touched again.
+
+---
+
+## Requirements
+
+Python 3.9+, and on macOS the Xcode command line tools for the OCR helper.
+
+macOS needs two one-time grants in System Settings → Privacy & Security:
+
+| grant | needed for |
+|---|---|
+| **Screen Recording** | frames, and window titles |
+| **Accessibility** | clicks and keystrokes |
+
+Without Accessibility, recording still works but loses click coordinates — and
+with them the ability to name the control that was pressed, which is where most
+of the value is.
+
+---
+
+## Status
+
+| stage | state |
+|---|---|
+| Recorder — frames, dedup, events, audio | working |
+| OCR — macOS Vision | working |
+| Transcription — chat hand-off and merge | working |
+| Packer — steps, delta text | working |
+| Contact sheets — cropped, annotated screenshots | not started |
+| Windows OCR helper | not started |
+| GUI | not started |
+
+Tested on macOS (Intel). The Windows backends for window tracking are written
+but untested.
+
+This is early. It works end to end and the numbers above are real measurements,
+not projections, but it has been exercised on a handful of sessions rather than
+a hundred. Issues and recordings that break it are welcome.
+
+---
+
+## Licence
+
+MIT. See [LICENSE](LICENSE).
