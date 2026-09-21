@@ -15,7 +15,7 @@ import subprocess
 import sys
 import threading
 
-HELPERS = {"darwin": "ocr_mac", "win32": "ocr_win.exe"}
+HELPERS = {"darwin": "ocr_mac", "win32": "ocr_win.py"}
 
 
 def helper_path():
@@ -26,18 +26,21 @@ def helper_path():
                         "helpers", name)
     if not os.path.exists(path):
         if sys.platform == "win32":
-            raise RuntimeError(
-                "OCR helper not built: %s\n"
-                "  The Windows OCR helper is not written yet -- recording works,\n"
-                "  but packing a session needs text off the frames." % path)
+            raise RuntimeError("OCR helper missing: %s" % path)
         raise RuntimeError(
             "OCR helper not built: %s\n  build it with:\n"
             "    swiftc -O helpers/ocr_mac.swift -o helpers/ocr_mac" % path)
     return path
 
 
+def _command(exe):
+    # A .py helper runs under this same interpreter, so it sees the same venv
+    # (and the winrt packages installed into it).
+    return [sys.executable, exe] if exe.endswith(".py") else [exe]
+
+
 def _worker(exe, paths, out):
-    proc = subprocess.Popen([exe], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+    proc = subprocess.Popen(_command(exe), stdin=subprocess.PIPE, stdout=subprocess.PIPE)
     stdout, _ = proc.communicate(("\n".join(paths) + "\n").encode())
     for line in stdout.decode("utf-8", "replace").splitlines():
         if not line.strip():
