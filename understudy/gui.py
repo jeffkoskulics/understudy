@@ -444,8 +444,21 @@ class App(ttk.Frame):
         session = self._session()
         if not session:
             return
-        from .transcribe import TranscribeError, transcribe
+        from .transcribe import (TranscribeError, install, install_command,
+                                 is_installed, transcribe)
         model = self.whisper_model.get() or TRANSCRIBE_DEFAULT_MODEL
+
+        # Ask before the download rather than after: it is a few hundred MB,
+        # and the alternative route (hand-off) needs none of it.
+        setup = not is_installed()
+        if setup and not messagebox.askyesno(
+                "Understudy",
+                "On-device transcription needs faster-whisper, which is not "
+                "installed yet (a few hundred MB).\n\nInstall it now?\n\n"
+                "    %s" % " ".join(install_command())):
+            self.status.set("Transcription needs faster-whisper. You can use "
+                            "the paste route instead.")
+            return
 
         def done(info):
             self._busy(False)
@@ -464,6 +477,8 @@ class App(ttk.Frame):
 
         def work():
             try:
+                if setup:
+                    install(progress=lambda m: self.status.set(m))
                 return transcribe(session, model=model,
                                   progress=lambda m: self.status.set(m))
             except TranscribeError as exc:
@@ -471,7 +486,8 @@ class App(ttk.Frame):
                 # problem the user can fix, not a crash worth a traceback.
                 raise RuntimeError(str(exc))
 
-        self.status.set("Starting whisper...")
+        self.status.set("Installing faster-whisper..." if setup
+                        else "Starting whisper...")
         self._run(work, done)
 
     def _prepare(self):

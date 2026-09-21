@@ -5,6 +5,10 @@
 #
 # or straight from the web, which clones into .\understudy first:
 #     iwr -useb https://raw.githubusercontent.com/jeffkoskulics/understudy/main/install.ps1 | iex
+#
+# Pass -WithWhisper to also install on-device transcription (a few hundred MB
+# more); without it, transcription hands off to a chat window.
+param([switch]$WithWhisper)
 
 $ErrorActionPreference = 'Stop'
 
@@ -70,10 +74,25 @@ if ($LASTEXITCODE -ne 0) { exit 1 }
 & $venvPython -m pip install -r (Join-Path $root 'requirements.txt') -q
 if ($LASTEXITCODE -ne 0) { exit 1 }
 
+if ($WithWhisper) {
+    Write-Host "Installing faster-whisper for on-device transcription"
+    & $venvPython -m pip install -r (Join-Path $root 'requirements-whisper.txt') -q
+    if ($LASTEXITCODE -ne 0) { exit 1 }
+}
+
 Write-Host ""
 Write-Host "Understudy is installed." -ForegroundColor Green
 Write-Host "Record a workflow with:"
 Write-Host "    $root\bin\understudy.cmd record --out $env:USERPROFILE\Recordings"
+Write-Host ""
+if ($WithWhisper) {
+    Write-Host "On-device transcription is installed too:"
+    Write-Host "    $root\bin\understudy.cmd transcribe <session>"
+} else {
+    Write-Host "Transcription hands off to a chat window by default. For on-device"
+    Write-Host "transcription instead (a few hundred MB more):"
+    Write-Host "    $root\bin\understudy.cmd transcribe --install"
+}
 Write-Host ""
 Write-Host "Note: OCR is macOS-only for now (the Windows OCR helper is not written"
 Write-Host "yet), so 'record' works but 'pack' cannot read text off the frames."

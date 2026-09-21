@@ -18,26 +18,82 @@ The model runs on the machine and nothing leaves it, which is the point.
 """
 import json
 import os
+import subprocess
+import sys
 
 from . import speech
 
 DEFAULT_MODEL = "base"
 NEAR = 0.75       # a stray word this close to a span still belongs to it
 
+REQUIREMENTS = os.path.join(os.path.dirname(os.path.dirname(
+    os.path.abspath(__file__))), "requirements-whisper.txt")
+
 
 class TranscribeError(RuntimeError):
     pass
+
+
+def is_installed():
+    """Is faster-whisper importable in the interpreter running us?"""
+    try:
+        import importlib.util
+        return importlib.util.find_spec("faster_whisper") is not None
+    except (ImportError, ValueError):
+        return False
+
+
+def install_command():
+    """The pip command that installs it into *this* interpreter. -> argv list
+
+    `sys.executable` matters more than it looks. The launcher in `bin/` runs
+    the project venv, so a bare `pip` on PATH is usually a different Python
+    altogether -- installing there leaves the import failing exactly as
+    before, which is the confusing half of the usual report.
+    """
+    if os.path.exists(REQUIREMENTS):
+        return [sys.executable, "-m", "pip", "install", "-r", REQUIREMENTS]
+    # Installed away from the clone: the pin lives in the file, so name the
+    # package directly rather than pointing at a path that is not there.
+    return [sys.executable, "-m", "pip", "install", "faster-whisper>=1.1"]
+
+
+def install(progress=None):
+    """Install faster-whisper into this interpreter. -> None"""
+    cmd = install_command()
+    if progress:
+        progress("Installing faster-whisper (a few hundred MB)...")
+    proc = subprocess.run(cmd, stdout=subprocess.PIPE,
+                          stderr=subprocess.STDOUT)
+    if proc.returncode != 0:
+        tail = (proc.stdout or b"").decode("utf-8", "replace").strip()
+        tail = "\n".join(tail.splitlines()[-10:])
+        raise TranscribeError(
+            "Installing faster-whisper failed (pip exited %d). Run it by hand "
+            "to see the whole log:\n    %s\n\n%s"
+            % (proc.returncode, " ".join(cmd), tail))
+    if not is_installed():
+        raise TranscribeError(
+            "pip reported success but faster-whisper still does not import. "
+            "Try again by hand:\n    %s" % " ".join(install_command()))
+
+
+def missing_message():
+    return ("faster-whisper is not installed. It is optional, because it "
+            "pulls in a few hundred MB that the hand-off path does not "
+            "need. Install it with:\n"
+            "    understudy transcribe --install\n"
+            "which is the same as:\n"
+            "    %s\n"
+            "Or keep using `understudy handoff` instead."
+            % " ".join(install_command()))
 
 
 def _load_model(name, device, compute_type):
     try:
         from faster_whisper import WhisperModel
     except ImportError:
-        raise TranscribeError(
-            "faster-whisper is not installed. It is optional, because it "
-            "pulls in a few hundred MB that the hand-off path does not need:\n"
-            "    pip install -r requirements-whisper.txt\n"
-            "Or keep using `understudy handoff` instead.")
+        raise TranscribeError(missing_message())
     try:
         return WhisperModel(name, device=device, compute_type=compute_type)
     except Exception as exc:
@@ -164,7 +220,11 @@ def main(argv):
     ap = argparse.ArgumentParser(prog="understudy transcribe",
                                  description="Transcribe session narration "
                                              "locally with faster-whisper.")
-    ap.add_argument("session")
+    ap.add_argument("session", nargs="?",
+                    help="the session directory to transcribe; optional with "
+                         "--install, which can be run on its own")
+    ap.add_argument("--install", action="store_true",
+                    help="install faster-whisper into this interpreter first")
     ap.add_argument("--model", default=DEFAULT_MODEL,
                     help="whisper model: tiny, base, small, medium, large-v3, "
                          "or an English-only variant such as base.en, which is "
@@ -176,6 +236,21 @@ def main(argv):
     ap.add_argument("--language", default=None,
                     help="force a language code instead of detecting it")
     args = ap.parse_args(argv)
+
+    if args.install and not is_installed():
+        try:
+            install(progress=lambda m: print(m))
+        except TranscribeError as exc:
+            print(str(exc))
+            return 1
+        print("faster-whisper is installed.")
+    elif args.install:
+        print("faster-whisper is already installed.")
+
+    if not args.session:
+        if args.install:
+            return 0
+        ap.error("a session directory is required")
 
     try:
         info = transcribe(args.session, model=args.model, device=args.device,
