@@ -258,8 +258,14 @@ CTranslate2 and its wheels are a few hundred MB that the chat hand-off path
 does not need:
 
 ```bash
-pip install -r requirements-whisper.txt
+bin/understudy transcribe --install
 ```
+
+That installs it into the interpreter Understudy actually runs -- the project
+venv -- which a bare `pip install -r requirements-whisper.txt` from another
+shell may not. The GUI offers the same thing the first time you press
+**Transcribe on this machine**, and `install.sh --with-whisper` (PowerShell:
+`.\install.ps1 -WithWhisper`) pulls it in at install time.
 
 The model itself is downloaded on first use and cached in
 `~/.cache/huggingface`; after that it runs offline like everything else.
