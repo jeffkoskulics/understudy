@@ -20,6 +20,7 @@ import json
 import os
 import re
 
+from . import activity as activity_mod
 from . import ocr as ocr_mod
 
 CONF_MIN = 0.5        # Vision confidence below this is mostly noise
@@ -195,10 +196,36 @@ def build(session_dir, workers=None):
         per_window[frame["window_id"]] = {**base, **visible}
         s["action"] = describe(s, record)
     _attach_narration(steps, _narration(session_dir))
-    return steps, manifest
+
+    # Activity labels are optional: `understudy activity` may not have been
+    # run, and a step keeps its own description either way.
+    segs = activity_mod.load(session_dir)
+    for s in steps:
+        seg = activity_mod.label_at(segs, s["t"]) if segs else None
+        if seg:
+            # The rule label, not the embedding name: the name groups a whole
+            # stretch and is already on the timeline above, while what a
+            # single step wants is the kind of input it was.
+            s["activity"] = seg["label"]
+            s["activity_name"] = seg.get("name")
+    return steps, manifest, segs
 
 
-def to_markdown(steps, manifest, session_name=""):
+def _activity_table(segs):
+    """A timeline of what the user was doing, ahead of the step detail."""
+    out = ["## Activity", "",
+           "One line per stretch of work, before the step-by-step below."]
+    for s in segs:
+        where = ("%s - %s" % (s.get("app") or "", s.get("window") or "")).strip(" -")
+        name = s.get("name")
+        label = "%s (%s)" % (name, s["label"]) if name else s["label"]
+        out.append("- [%s-%s] **%s** %s"
+                   % (_mmss(s["start"]), _mmss(s["end"]), label, where))
+    out.append("")
+    return out
+
+
+def to_markdown(steps, manifest, session_name="", segs=None):
     out = []
     dur = manifest.get("duration", 0)
     out.append("# Workflow recording%s" % (": " + session_name if session_name else ""))
@@ -206,6 +233,8 @@ def to_markdown(steps, manifest, session_name=""):
     out.append("%d steps over %d:%02d. Each step is one user action; `new:` lists "
                "text that appeared on screen as a result." % (len(steps), dur // 60, dur % 60))
     out.append("")
+    if segs:
+        out.extend(_activity_table(segs))
     last_window = None
     for s in steps:
         f = s["frame"]
@@ -215,7 +244,9 @@ def to_markdown(steps, manifest, session_name=""):
             out.append("## %s" % window.rstrip(" -"))
             last_window = window
         out.append("")
-        out.append("**%s** [%s] %s" % (s["id"], _mmss(s["t"]), s["action"]))
+        out.append("**%s** [%s] %s%s"
+                   % (s["id"], _mmss(s["t"]), s["action"],
+                      "  _(%s)_" % s["activity"] if s.get("activity") else ""))
         for said in s.get("said", []):
             out.append("  - said: %s" % said)
         if s["new"]:
@@ -231,9 +262,9 @@ def _mmss(t):
 
 
 def pack(session_dir, workers=None):
-    steps, manifest = build(session_dir, workers)
+    steps, manifest, segs = build(session_dir, workers)
     name = os.path.basename(os.path.normpath(session_dir))
-    md = to_markdown(steps, manifest, name)
+    md = to_markdown(steps, manifest, name, segs)
     md_path = os.path.join(session_dir, "workflow.md")
     with open(md_path, "w", encoding="utf-8") as fh:
         fh.write(md)
@@ -244,7 +275,8 @@ def pack(session_dir, workers=None):
         json.dump([{"id": s["id"], "t": s["t"], "action": s["action"],
                     "frame": s["frame"]["file"], "app": s["frame"].get("app"),
                     "window": s["frame"].get("window"), "new": s["new"],
-                    "said": s.get("said", [])}
+                    "said": s.get("said", []), "activity": s.get("activity"),
+                    "activity_name": s.get("activity_name")}
                    for s in steps], fh, indent=1, ensure_ascii=False)
     return md_path, json_path, len(md)
 

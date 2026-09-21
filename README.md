@@ -185,6 +185,68 @@ GUI and pack it from a script, or the other way round.
 
 ---
 
+### Classifying what the user was doing
+
+`activity` labels the session without looking at the frames at all:
+
+```bash
+./bin/understudy activity ~/Recordings/session-2026-09-18-1432
+```
+
+```
+A001  0:00-0:08  navigating             Mail - Inbox - Mail
+A002  0:08-0:25  reading                Mail - Inbox - Mail
+A003  0:25-0:44  form-filling           Excel - budget.xlsx - Excel
+A004  0:44-1:20  idle                   Excel - budget.xlsx - Excel
+A005  1:20-1:49  typing                 Editor - notes.md - Editor
+```
+
+The unit is a stretch of work, not a frame -- a user is not doing a different
+thing every 500 ms, and hundreds of images an hour is the wrong granularity to
+label. A stretch ends when the user arrives in a different window, stops for
+long enough that the activity has clearly ended, or switches the kind of input
+they are giving. Each one is then labelled from the event stream and the frame
+metadata: `typing`, `form-filling`, `editing`, `reading`, `navigating`,
+`app-switching`, `arranging-windows`, `watching`, `waiting`, `idle`.
+
+This is rules over numbers that were already recorded, not a model, and that
+is deliberate: a screenshot of a spreadsheet looks identical whether it is
+being read or filled in, and the click and keystroke record is what tells them
+apart. Every segment carries a `why` saying which numbers produced its label,
+so a label that looks wrong names the rule to argue with. Results go to
+`activity.jsonl`, and `pack` folds them into `workflow.md` if they are there.
+
+That says what *kind* of work a stretch was, not what the work was *about*.
+For that, `--embed` runs a small sentence model (about 90 MB, CPU, local) over
+the text the session already contains -- window titles, the OCR delta, the
+narration -- and names each segment:
+
+```bash
+./bin/understudy activity --install                     # one-time, ~a few hundred MB
+./bin/understudy activity <session> --embed             # discover the activities
+./bin/understudy activity <session> --embed \
+    --labels "email triage,data entry,web research"     # or match a fixed set
+```
+
+Without `--labels` it clusters the segments and names each cluster by the
+terms that distinguish it, which is how you find out what your label set
+should be. With `--labels` it matches each segment against labels you have
+settled on, by cosine similarity, so adding one costs nothing and needs no
+training data. A segment that matches nothing well keeps its rule-based label
+rather than being given a confident wrong name.
+
+Both write into the same `activity.jsonl`: `label` is what the input stream
+proves, `name` is what the text suggests, and the two disagreeing is worth
+looking at. Run `transcribe` and `pack` first if you can -- the embedding
+stage reads their output, and window titles alone are thin.
+
+No image model is involved at any point. Embedding text that OCR has already
+extracted is far cheaper than captioning frames, and on screenshots it is also
+more accurate: CLIP-class models are weak on fine UI detail and on reading
+text in an image, which is exactly what the Vision helper is good at.
+
+---
+
 ## Why not just record the screen
 
 Because the interesting thing is not the pixels.
@@ -267,8 +329,15 @@ shell may not. The GUI offers the same thing the first time you press
 **Transcribe on this machine**, and `install.sh --with-whisper` (PowerShell:
 `.\install.ps1 -WithWhisper`) pulls it in at install time.
 
-The model itself is downloaded on first use and cached in
-`~/.cache/huggingface`; after that it runs offline like everything else.
+Semantic activity labels are optional in the same way, and separate again
+because they pull in torch:
+
+```bash
+understudy activity --install
+```
+
+The models are downloaded on first use and cached in
+`~/.cache/huggingface`; after that they run offline like everything else.
 `base` is the default and is roughly realtime on a laptop CPU; `small.en` is
 noticeably better on English narration and about three times slower.
 
@@ -297,6 +366,9 @@ of the value is.
 | OCR — macOS Vision | working |
 | Transcription — chat hand-off and merge | working |
 | Transcription — on-device, faster-whisper | working |
+| Activity labels — rules over events and frame metadata | working |
+| Activity labels — local text embeddings, clustered or zero-shot | working |
+| Activity labels — local vision model over the frames | not started |
 | Packer — steps, delta text | working |
 | Contact sheets — cropped, annotated screenshots | not started |
 | Windows OCR helper | not started |

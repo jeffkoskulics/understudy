@@ -8,6 +8,7 @@ def usage():
   understudy gui                 open the control panel (no flags to learn)
   understudy record [options]    capture a session
   understudy transcribe <sess>   transcribe narration here, with whisper
+  understudy activity   <sess>   classify what the user was doing
   understudy handoff <session>   prepare audio + prompt for a chat LLM
   understudy merge   <session>   merge a pasted transcript (reads stdin)
   understudy pack    <session>   build workflow.md, ready to paste
@@ -31,6 +32,10 @@ def main(argv):
     if cmd == "transcribe":
         from .transcribe import main as transcribe_main
         return transcribe_main(rest)
+
+    if cmd == "activity":
+        from .activity import main as activity_main
+        return activity_main(rest)
 
     if cmd == "handoff":
         from .handoff import prepare

@@ -1,0 +1,11 @@
+# Optional: semantic activity labels for `understudy activity --embed`.
+#
+# Kept out of requirements.txt because torch and the model weights are a few
+# hundred MB that the rule-based pass in activity.py does not need. Install it
+# only if you want clustered or zero-shot activity labels:
+#
+#     understudy activity --install
+#
+# The model (all-MiniLM-L6-v2, about 90 MB) is downloaded on first use and
+# cached in ~/.cache/huggingface; after that it runs offline, on CPU.
+sentence-transformers>=2.2
