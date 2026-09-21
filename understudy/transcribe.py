@@ -18,16 +18,15 @@ The model runs on the machine and nothing leaves it, which is the point.
 """
 import json
 import os
-import subprocess
-import sys
 
-from . import speech
+from . import deps, speech
 
 DEFAULT_MODEL = "base"
 NEAR = 0.75       # a stray word this close to a span still belongs to it
 
-REQUIREMENTS = os.path.join(os.path.dirname(os.path.dirname(
-    os.path.abspath(__file__))), "requirements-whisper.txt")
+MODULE = "faster_whisper"
+REQUIREMENTS = "requirements-whisper.txt"
+PACKAGES = ["faster-whisper>=1.1"]
 
 
 class TranscribeError(RuntimeError):
@@ -35,58 +34,27 @@ class TranscribeError(RuntimeError):
 
 
 def is_installed():
-    """Is faster-whisper importable in the interpreter running us?"""
-    try:
-        import importlib.util
-        return importlib.util.find_spec("faster_whisper") is not None
-    except (ImportError, ValueError):
-        return False
+    return deps.is_installed(MODULE)
 
 
 def install_command():
-    """The pip command that installs it into *this* interpreter. -> argv list
-
-    `sys.executable` matters more than it looks. The launcher in `bin/` runs
-    the project venv, so a bare `pip` on PATH is usually a different Python
-    altogether -- installing there leaves the import failing exactly as
-    before, which is the confusing half of the usual report.
-    """
-    if os.path.exists(REQUIREMENTS):
-        return [sys.executable, "-m", "pip", "install", "-r", REQUIREMENTS]
-    # Installed away from the clone: the pin lives in the file, so name the
-    # package directly rather than pointing at a path that is not there.
-    return [sys.executable, "-m", "pip", "install", "faster-whisper>=1.1"]
+    return deps.install_command(REQUIREMENTS, PACKAGES)
 
 
 def install(progress=None):
-    """Install faster-whisper into this interpreter. -> None"""
-    cmd = install_command()
-    if progress:
-        progress("Installing faster-whisper (a few hundred MB)...")
-    proc = subprocess.run(cmd, stdout=subprocess.PIPE,
-                          stderr=subprocess.STDOUT)
-    if proc.returncode != 0:
-        tail = (proc.stdout or b"").decode("utf-8", "replace").strip()
-        tail = "\n".join(tail.splitlines()[-10:])
-        raise TranscribeError(
-            "Installing faster-whisper failed (pip exited %d). Run it by hand "
-            "to see the whole log:\n    %s\n\n%s"
-            % (proc.returncode, " ".join(cmd), tail))
-    if not is_installed():
-        raise TranscribeError(
-            "pip reported success but faster-whisper still does not import. "
-            "Try again by hand:\n    %s" % " ".join(install_command()))
+    try:
+        deps.install(MODULE, REQUIREMENTS, PACKAGES, progress=progress,
+                     what="faster-whisper (a few hundred MB)")
+    except deps.DependencyError as exc:
+        raise TranscribeError(str(exc))
 
 
 def missing_message():
-    return ("faster-whisper is not installed. It is optional, because it "
-            "pulls in a few hundred MB that the hand-off path does not "
-            "need. Install it with:\n"
-            "    understudy transcribe --install\n"
-            "which is the same as:\n"
-            "    %s\n"
-            "Or keep using `understudy handoff` instead."
-            % " ".join(install_command()))
+    return deps.missing_message(
+        "faster-whisper",
+        "it pulls in a few hundred MB that the hand-off path does not need",
+        "understudy transcribe --install", REQUIREMENTS, PACKAGES,
+        alternative="Or keep using `understudy handoff` instead.")
 
 
 def _load_model(name, device, compute_type):
