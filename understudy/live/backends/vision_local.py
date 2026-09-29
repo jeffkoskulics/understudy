@@ -37,8 +37,16 @@ class OllamaBackend:
             "model": self.model, "prompt": payload["prompt"],
             "images": payload["images"], "stream": False,
             "options": {"temperature": 0.1, "num_predict": self.num_predict},
+            "keep_alive": "30m",
         }, self.timeout)
         return {"text": (out.get("response") or "").strip()}
+
+    def warm_up(self):
+        """Load the model before recording, so the first frame doesn't pay for it."""
+        _http(self.host + "/api/generate", {
+            "model": self.model, "prompt": "ok", "stream": False,
+            "options": {"num_predict": 1}, "keep_alive": "30m",
+        }, max(self.timeout, 300.0))
 
     def probe(self):
         try:

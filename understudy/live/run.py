@@ -105,6 +105,7 @@ class LiveRecorder(Recorder):
                  vision=True, transcribe=True, diarize=True,
                  vision_backend="ollama", vision_model=None, vision_url=None,
                  vision_mode="describe", vision_max_rate=1.0,
+                 vision_timeout=120.0, vision_max_side=1280,
                  whisper_model=None, indicator=None, tk_master=None):
         prof = get_profile(profile)
         want_indicator = prof.pop("indicator")
@@ -136,7 +137,7 @@ class LiveRecorder(Recorder):
         self._build_diarizer(diarize)
         self._build_transcriber(transcribe, whisper_model)
         self._build_vision(vision, vision_backend, vision_model, vision_url,
-                           vision_mode, vision_max_rate)
+                           vision_mode, vision_max_rate, vision_timeout, vision_max_side)
         if self.want_system:
             self.system = SystemAudioRecorder(
                 self.clock, os.path.join(self.session.dir, "audio_system.wav"),
@@ -182,22 +183,27 @@ class LiveRecorder(Recorder):
             self.clock, self.session, backend, self.metrics,
             speaker=self.diarizer.speaker_at if self.diarizer else None)
 
-    def _build_vision(self, on, kind, model, url, mode, max_rate):
+    def _build_vision(self, on, kind, model, url, mode, max_rate,
+                      timeout=120.0, max_side=1280):
         if not on:
             return
         from .backends.vision_local import OllamaBackend, OpenAICompatBackend
         from .vision import VisionAnalyzer
         cls = OllamaBackend if kind == "ollama" else OpenAICompatBackend
-        kw = {}
+        kw = {"timeout": timeout}
         if model:
             kw["model"] = model
         if url:
             kw["host"] = url
         backend = cls(**kw)
         analyzer = VisionAnalyzer(self.clock, self.session, backend, mode=mode,
-                                  max_rate=max_rate, metrics=self.metrics)
+                                  max_rate=max_rate, max_side=max_side,
+                                  metrics=self.metrics)
         try:
             analyzer.probe()
+            if hasattr(backend, "warm_up"):
+                print("Loading vision model %s ..." % backend.model, file=sys.stderr)
+                backend.warm_up()
         except Exception as exc:
             self._note("Vision analysis disabled: %s" % exc)
             return
@@ -338,6 +344,10 @@ def build_parser():
     p.add_argument("--vision-mode", choices=["describe", "diff"], default="describe")
     p.add_argument("--vision-max-rate", type=float, default=1.0,
                    help="max vision analyses per second")
+    p.add_argument("--vision-timeout", type=float, default=120.0,
+                   help="seconds to wait for one frame's analysis")
+    p.add_argument("--vision-max-side", type=int, default=1280,
+                   help="downscale frames to this many pixels on the long side")
     p.add_argument("--whisper-model", default=None)
     return p
 
@@ -353,7 +363,8 @@ def main(argv=None):
             transcribe=not a.no_transcribe, diarize=not a.no_diarize,
             vision_backend=a.vision_backend, vision_model=a.vision_model,
             vision_url=a.vision_url, vision_mode=a.vision_mode,
-            vision_max_rate=a.vision_max_rate, whisper_model=a.whisper_model,
+            vision_max_rate=a.vision_max_rate,
+            vision_timeout=a.vision_timeout, vision_max_side=a.vision_max_side, whisper_model=a.whisper_model,
             indicator=False if a.no_indicator else None)
     except ValueError as exc:
         sys.exit(str(exc))
