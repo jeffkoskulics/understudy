@@ -74,6 +74,11 @@ if ($LASTEXITCODE -ne 0) { exit 1 }
 & $venvPython -m pip install -r (Join-Path $root 'requirements.txt') -q
 if ($LASTEXITCODE -ne 0) { exit 1 }
 
+& $venvPython -m pip install -r (Join-Path $root 'requirements-upload.txt') -q
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "Could not install upload support (boto3); 'understudy upload' will not work." -ForegroundColor Yellow
+}
+
 if ($WithWhisper) {
     Write-Host "Installing faster-whisper for on-device transcription"
     & $venvPython -m pip install -r (Join-Path $root 'requirements-whisper.txt') -q
@@ -96,3 +101,7 @@ if ($WithWhisper) {
 Write-Host ""
 Write-Host "Note: OCR is macOS-only for now (the Windows OCR helper is not written"
 Write-Host "yet), so 'record' works but 'pack' cannot read text off the frames."
+Write-Host ""
+Write-Host "Live analysis (understudy live) describes the screen with a local vision"
+Write-Host "model. Install Ollama from https://ollama.com, then:"
+Write-Host "    ollama pull qwen2.5vl:7b"

@@ -1,0 +1,3 @@
+# Diagnostic upload (`understudy upload`) talks to Cloudflare R2 over its
+# S3-compatible API. Installed by default by install.sh / install.ps1.
+boto3>=1.34

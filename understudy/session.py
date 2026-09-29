@@ -38,6 +38,8 @@ class Session:
         os.makedirs(self.frames_dir, exist_ok=True)
         self.frames = JsonlWriter(os.path.join(self.dir, "frames.jsonl"))
         self.events = JsonlWriter(os.path.join(self.dir, "events.jsonl"))
+        self._writers = {}
+        self._writers_lock = threading.Lock()
 
     @property
     def audio_path(self):
@@ -53,6 +55,21 @@ class Session:
         with open(os.path.join(self.dir, "manifest.json"), "w", encoding="utf-8") as fh:
             json.dump(data, fh, indent=2, ensure_ascii=False)
 
+    def writer(self, name: str) -> "JsonlWriter":
+        """Cached append-only writer for `<dir>/<name>`; closed by close()."""
+        with self._writers_lock:
+            w = self._writers.get(name)
+            if w is None:
+                w = self._writers[name] = JsonlWriter(os.path.join(self.dir, name))
+            return w
+
     def close(self):
         self.frames.close()
         self.events.close()
+        with self._writers_lock:
+            writers, self._writers = list(self._writers.values()), {}
+        for w in writers:
+            try:
+                w.close()
+            except Exception:
+                pass

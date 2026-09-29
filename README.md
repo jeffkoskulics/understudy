@@ -185,6 +185,62 @@ GUI and pack it from a script, or the other way round.
 
 ---
 
+### Live analysis (meetings, classes, demos)
+
+`understudy live` records like `record`, and also analyses the session as it
+happens, entirely on this machine: a local vision model describes the screen,
+faster-whisper transcribes the audio, and speakers are attributed. Pick a
+profile:
+
+| profile | for | behaviour |
+|---|---|---|
+| `teacher` | an expert demonstrating | dedup capture, clicks and window switches mark steps |
+| `student` | someone working a task | dedup, sampled faster, short heartbeat (pauses matter) |
+| `meeting` | a video call | a frame every 0.5 s, system audio captured too, always-on-top REC indicator |
+
+```bash
+ollama pull qwen2.5vl:7b                       # once; needs Ollama running
+./bin/understudy live --profile meeting --out ~/Recordings
+./bin/understudy live --profile student --no-vision   # audio + metrics only
+```
+
+Useful flags: `--vision-mode describe|diff`, `--vision-backend ollama|openai`,
+`--vision-model`, `--vision-url`, `--vision-max-rate`, `--whisper-model`,
+`--no-vision`, `--no-transcribe`, `--no-diarize`, `--system-audio`. If the
+vision server is unreachable, live prints why and carries on without it. On
+macOS, system audio needs a virtual device such as BlackHole; on Linux and
+Windows it uses `soundcard`. The GUI has the same thing: tick "Live analysis".
+
+The session folder gains `live_transcript.jsonl`, `vision.jsonl`,
+`speakers.jsonl`, `metrics.jsonl` and `system.json` (formats in
+`docs/CONTRACTS.md`).
+
+**Naming participants.** Remote voices are `S1`, `S2`... (install
+`requirements-speakers.txt` for voice clustering; without it, mic is `local`
+and everything else `remote`). Names apply retroactively:
+
+```bash
+./bin/understudy name <session> list
+./bin/understudy name <session> S2 "Maria"
+```
+
+**How heavy was it?** `./bin/understudy metrics <session>` summarises CPU,
+memory, GPU, disk and per-stage latency and drops.
+
+**Uploading diagnostics.** To share a sample with the developers, opt in
+explicitly. Nothing is ever uploaded automatically:
+
+```bash
+./bin/understudy upload --configure           # paste R2 credentials once
+./bin/understudy upload <session> --dry-run   # list what would be sent
+./bin/understudy upload <session> [--from 60 --to 180] [--no-audio] [--no-frames]
+```
+
+Setup of the bucket is in [docs/R2-SETUP.md](docs/R2-SETUP.md);
+`understudy bundle` builds the same package locally.
+
+---
+
 ### Classifying what the user was doing
 
 `activity` labels the session without looking at the frames at all:

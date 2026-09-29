@@ -1,0 +1,11 @@
+# Optional: tier-2 speaker attribution (cluster remote voices into S1, S2, ...).
+#
+# sherpa-onnx needs a speaker-embedding model file that is NOT bundled. Download
+# one (e.g. a 3D-Speaker or WeSpeaker .onnx from the sherpa-onnx releases) and
+# point Understudy at it:
+#
+#     export UNDERSTUDY_SPEAKER_MODEL=/path/to/model.onnx      (macOS/Linux)
+#     $env:UNDERSTUDY_SPEAKER_MODEL = "C:\path\to\model.onnx"  (PowerShell)
+#
+# Without it, attribution falls back to channel only: mic = local, system = remote.
+sherpa-onnx

@@ -4,3 +4,5 @@ Pillow>=11.0
 numpy>=2.0
 sounddevice>=0.5
 pyobjc-framework-Quartz>=10.0 ; sys_platform == "darwin"
+psutil>=5.9
+soundcard>=0.4.3 ; sys_platform != "darwin"

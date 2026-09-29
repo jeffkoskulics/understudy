@@ -7,6 +7,11 @@ def usage():
     print("""
   understudy gui                 open the control panel (no flags to learn)
   understudy record [options]    capture a session
+  understudy live [options]      record with live vision + transcription
+  understudy name <sess> [id "Name" | list]   name meeting participants
+  understudy bundle <sess>       package a session (or slice) for upload
+  understudy upload <sess>       upload a diagnostic bundle (--configure first)
+  understudy metrics <sess>      summarise CPU/RAM/latency of a live session
   understudy transcribe <sess>   transcribe narration here, with whisper
   understudy activity   <sess>   classify what the user was doing
   understudy handoff <session>   prepare audio + prompt for a chat LLM
@@ -28,6 +33,26 @@ def main(argv):
     if cmd == "record":
         from .record import main as record_main
         return record_main(rest)
+
+    if cmd == "live":
+        from .live.run import main as live_main
+        return live_main(rest)
+
+    if cmd == "bundle":
+        from .bundle import main as bundle_main
+        return bundle_main(rest)
+
+    if cmd == "upload":
+        from .upload import main as upload_main
+        return upload_main(rest)
+
+    if cmd == "name":
+        from .participants import main as name_main
+        return name_main(rest)
+
+    if cmd == "metrics":
+        from .live.metrics import main as metrics_main
+        return metrics_main(rest)
 
     if cmd == "transcribe":
         from .transcribe import main as transcribe_main
