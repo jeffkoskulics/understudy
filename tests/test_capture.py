@@ -36,7 +36,7 @@ def test_decide_suppress():
 def test_profiles():
     assert set(PROFILES) == {"teacher", "student", "meeting"}
     m = get_profile("meeting")
-    assert m["mode"] == "fixed" and m["fps"] == 2.0 and m["indicator"] and m["audio_system"]
+    assert m["mode"] == "dedup" and m["fps"] == 2.0 and m["indicator"] and m["audio_system"]
     assert not get_profile("teacher")["indicator"]
     for p in PROFILES.values():
         kw = {k: v for k, v in p.items() if k not in ("indicator", "audio_system")}

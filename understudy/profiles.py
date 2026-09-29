@@ -12,9 +12,12 @@ before passing the rest to CaptureLoop.
            informative here.
   meeting  a video call with shared screens. Window switches are a weak signal
            -- the shared content is the screen, and the call window is often
-           frontmost -- so every frame is written at a steady 2 fps and dedup
-           survives only as a tag. The indicator is on and system audio is
-           captured so remote voices are heard.
+           frontmost -- so the pixel diff does the work: sampled at 2 fps, a
+           frame is written when the shared screen changes, with a 30 s
+           heartbeat. The indicator is on and system audio is captured so
+           remote voices are heard. (A first real meeting session in fixed
+           mode kept 645 frames of which 92 had changed; `--mode fixed` is
+           still there for uniform sampling.)
 """
 
 PROFILES = {
@@ -22,7 +25,7 @@ PROFILES = {
                 "heartbeat": 120.0, "indicator": False, "audio_system": False},
     "student": {"mode": "dedup", "fps": 3.0, "min_change": 0.004,
                 "heartbeat": 30.0, "indicator": False, "audio_system": False},
-    "meeting": {"mode": "fixed", "fps": 2.0, "min_change": 0.004,
+    "meeting": {"mode": "dedup", "fps": 2.0, "min_change": 0.004,
                 "heartbeat": 30.0, "indicator": True, "audio_system": True},
 }
 

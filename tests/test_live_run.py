@@ -148,7 +148,7 @@ def jsonl(path):
 
 
 def test_live_recorder_end_to_end(tmp_path, fakes):
-    rec = run.LiveRecorder(out=str(tmp_path), name="s", profile="meeting",
+    rec = run.LiveRecorder(out=str(tmp_path), name="s", profile="meeting", mode="fixed",
                            vision_url=fakes["url"], vision_max_rate=10)
     rec.start()
     time.sleep(2.2)
