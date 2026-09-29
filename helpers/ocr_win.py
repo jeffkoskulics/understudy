@@ -128,7 +128,8 @@ async def ocr(engine, path):
 async def main():
     engine = make_engine()
     for raw in sys.stdin:
-        path = raw.strip()
+        # Tolerate hand-typed paths: surrounding quotes, %VARS% and ~.
+        path = os.path.expanduser(os.path.expandvars(raw.strip().strip('"')))
         if not path:
             continue
         if engine is None:
