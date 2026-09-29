@@ -29,7 +29,25 @@ Change detection runs on a 64x64 grid of cell means -- coarse on purpose, so
 that caret blink and pointer movement register as nothing, while the set of
 changed cells doubles as a bounding box of *where* the screen changed. That box
 is what lets a later stage crop to the part that matters.
+
+Two modes decide what happens to a sampled frame:
+
+  dedup  (default) keep only frames with a reason, as described above.
+  fixed  write *every* sampled frame, at 2-4 fps, for live analysis where a
+         consumer (a vision model, a meeting summary) wants a steady stream
+         rather than a sparse keyframe set. The dedup decision is still made,
+         and recorded in `reasons`; an empty list means dedup would have
+         dropped the frame. Downstream can therefore recover the dedup view
+         from a fixed recording by filtering on `reasons`.
+
+Every frame record carries `mode` and `reasons`. `reason` (the single primary
+reason) is kept for existing consumers; in fixed mode a frame dedup would have
+dropped gets reason "fixed".
+
+The frame decision lives in `decide_reasons`, a pure function, so it can be
+tested without a display.
 """
+import logging
 import threading
 
 import mss
@@ -40,12 +58,54 @@ GRID = 64            # change-detection grid, GRID x GRID cells
 CELL_DELTA = 10      # per-cell mean-luma change (0-255) counted as "changed"
 POST_ACTION_DELAY = 0.4   # capture this long after a click, to catch the result
 MOVE_SETTLE = 0.5    # bounds must hold still this long before a move is kept
+MODES = ("dedup", "fixed")
+FIXED_FPS_RANGE = (2.0, 4.0)
+
+log = logging.getLogger(__name__)
+
+
+def decide_reasons(forced, wreason, frac, idle, first, min_change, heartbeat):
+    """Return the ordered list of reasons a sampled frame is worth keeping.
+
+    Empty means dedup would drop it. The first element is the primary reason:
+    an explicit user action beats a window event, which beats pixels, which
+    beats the heartbeat. `wreason == "suppress"` means a window is mid-drag:
+    pixel diffs and window events are ignored, but an explicit action or the
+    heartbeat still gets through.
+    """
+    if first:
+        return ["first"]          # nothing to compare against yet
+    reasons = []
+    if forced:
+        reasons.append(forced)
+    suppressed = wreason == "suppress"
+    heartbeat_due = idle >= heartbeat
+    if suppressed and forced is None and not heartbeat_due:
+        return reasons
+    if wreason and not suppressed:
+        reasons.append(wreason)
+    if not suppressed or heartbeat_due:
+        if frac >= min_change:
+            reasons.append("diff")
+    if heartbeat_due:
+        reasons.append("heartbeat")
+    return list(dict.fromkeys(reasons))
 
 
 class CaptureLoop(threading.Thread):
     def __init__(self, clock, session, monitor=1, fps=2.0, min_change=0.004,
-                 heartbeat=120.0, jpeg_quality=92, frontmost=None):
+                 heartbeat=120.0, jpeg_quality=92, frontmost=None,
+                 mode="dedup", on_frame=None):
         super().__init__(daemon=True)
+        if mode not in MODES:
+            raise ValueError(f"mode must be one of {MODES}, got {mode!r}")
+        if mode == "fixed" and not (FIXED_FPS_RANGE[0] <= float(fps) <= FIXED_FPS_RANGE[1]):
+            raise ValueError(f"fixed mode needs fps in {FIXED_FPS_RANGE}, got {fps}")
+        self.mode = mode
+        # Called as on_frame(record, path) after each written frame. Runs on the
+        # capture thread, so it must not block: the owner should just enqueue.
+        # `record` is a copy; its `duration` is not final yet.
+        self.on_frame = on_frame
         self.clock = clock
         self.session = session
         self.monitor = monitor
@@ -66,6 +126,7 @@ class CaptureLoop(threading.Thread):
         self._prev_grid = None
         self._last_kept = None            # record dict of the last kept frame
         self._last_kept_t = -1e9
+        self._last_reason_t = -1e9        # last time dedup would have kept a frame
         self._win_id = None               # window identity as of the last sample
         self._win_bounds = None
         self._move_from = None            # bounds a move started from
@@ -215,38 +276,33 @@ class CaptureLoop(threading.Thread):
 
                 grid = self._signature(img)
                 frac, cell_bbox = self._change(grid)
-                idle = t - self._last_kept_t
+                # Idle is measured from the last frame dedup would have kept,
+                # so fixed mode's heartbeat tag matches what dedup would do.
+                idle = t - self._last_reason_t
 
-                # A window being dragged suppresses pixel-diff and window
-                # reasons, but never an explicit user action or the heartbeat.
-                if wreason == "suppress":
-                    if forced is None and idle < self.heartbeat:
-                        continue
-                    wreason = None
-
-                reason = forced or wreason
-                if reason is None:
-                    if frac >= self.min_change:
-                        reason = "diff"
-                    elif idle >= self.heartbeat:
-                        reason = "heartbeat"
-                    else:
-                        continue
-                if self._last_kept is None:
-                    reason = "first"
-
-                self._prev_grid = grid
-                self._write_frame(img, t, reason, frac, cell_bbox, win)
+                reasons = decide_reasons(
+                    forced, wreason, frac, idle, self._last_kept is None,
+                    self.min_change, self.heartbeat)
+                if not reasons and self.mode == "dedup":
+                    continue
+                if reasons:
+                    # Diff against the last frame dedup would have kept, in
+                    # both modes, so the tags are mode-independent.
+                    self._prev_grid = grid
+                    self._last_reason_t = t
+                reason = reasons[0] if reasons else "fixed"
+                self._write_frame(img, t, reason, reasons, frac, cell_bbox, win)
 
         self._close_last()
 
-    def _write_frame(self, img, t, reason, frac, cell_bbox, win):
+    def _write_frame(self, img, t, reason, reasons, frac, cell_bbox, win):
         idx = self.kept
         img.save(self.session.frame_path(idx), "JPEG",
                  quality=self.jpeg_quality, subsampling=0)
         rec = {
             "idx": idx, "t": round(t, 3), "file": self.session.frame_rel(idx),
-            "reason": reason, "change": round(frac, 5),
+            "reason": reason, "reasons": list(reasons), "mode": self.mode,
+            "change": round(frac, 5),
             "bbox": self._cells_to_pixels(cell_bbox, img.width, img.height),
             "app": win.get("app", ""), "window": win.get("title", ""),
             "window_id": win.get("window_id"), "window_bounds": win.get("bounds"),
@@ -258,6 +314,11 @@ class CaptureLoop(threading.Thread):
         self._last_kept = rec
         self._last_kept_t = t
         self.kept += 1
+        if self.on_frame is not None:
+            try:
+                self.on_frame(dict(rec), self.session.frame_path(idx))
+            except Exception:
+                log.exception("on_frame callback failed")   # never kill capture
 
     def _close_last(self, until=None):
         """Write the previous kept frame once its duration is known."""
