@@ -23,6 +23,8 @@ the recorder.
 | `audio_system.wav` | loopback, 16 kHz mono | start offset stored in the manifest as `audio_system_offset` |
 | `live_transcript.jsonl` | live_transcribe | `{t0, t1, text, source: "mic"\|"system", final: bool, speaker?: str, words?: [{w,t0,t1}]}` |
 | `vision.jsonl` | vision | `{t, frame, mode: "describe"\|"diff", prev_frame?, backend, model, latency_s, text, skipped?: reason}` |
+| `live_ocr.jsonl` | ocr_live | `{t, frame, latency_s, text: [sorted unique lines], added: [..], removed: [..]}` or `{t, frame, error}` |
+| `ocr_text.json` (JSON) | ocr_live, at stop | `{count, text: {line: {first, last, frames}}}` |
 | `speakers.jsonl` | diarize | `{t0, t1, source, speaker_id, name?: str, confidence}` |
 | `participants.json` (JSON) | user/GUI | `{"speaker_id": "Display Name", ...}`, optional |
 | `metrics.jsonl` | metrics | `{t, cpu_pct, cpu_per_core, rss_mb, sys_mem_pct, gpu?: {...}, disk_write_mb_s, counters, gauges, timings: {name: {n, p50, p95, max}}}` at 1 Hz |

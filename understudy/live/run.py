@@ -106,7 +106,7 @@ class LiveRecorder(Recorder):
                  vision_backend="ollama", vision_model=None, vision_url=None,
                  vision_mode="describe", vision_max_rate=1.0,
                  vision_timeout=120.0, vision_max_side=1280,
-                 vision_on_change=False, vision_context=None, vision_device="GPU",
+                 vision_on_change=False, vision_context=None, vision_device="GPU", ocr=True,
                  whisper_model=None, indicator=None, tk_master=None):
         prof = get_profile(profile)
         want_indicator = prof.pop("indicator")
@@ -123,6 +123,7 @@ class LiveRecorder(Recorder):
         self.vision = None
         self.transcriber = None
         self.diarizer = None
+        self.ocr = None
         self.system = None
         self.metrics = None
         self.notes = []          # human-readable degradations, shown and stored
@@ -136,6 +137,7 @@ class LiveRecorder(Recorder):
 
         self.metrics = Metrics(self.session.dir, self.clock)
         self._build_diarizer(diarize)
+        self._build_ocr(ocr)
         self._build_transcriber(transcribe, whisper_model)
         self._vision_device = vision_device
         self._build_vision(vision, vision_backend, vision_model, vision_url,
@@ -149,6 +151,7 @@ class LiveRecorder(Recorder):
                       "vision": self.vision is not None,
                       "transcribe": self.transcriber is not None,
                       "diarize": self.diarizer is not None,
+                      "ocr": self.ocr is not None,
                       "system_audio": bool(self.want_system),
                       "vision_mode": vision_mode, "vision_max_rate": vision_max_rate,
                       "vision_backend": vision_backend}
@@ -159,6 +162,18 @@ class LiveRecorder(Recorder):
             self._proc.cpu_percent(None)
 
     # -- construction helpers ---------------------------------------------
+    def _build_ocr(self, on):
+        if not on:
+            return
+        from .ocr_live import LiveOCR
+        try:
+            o = LiveOCR(self.clock, self.session, self.metrics)
+            o.probe()
+        except Exception as exc:
+            self._note("Live OCR disabled: %s" % exc)
+            return
+        self.ocr = o
+
     def _build_diarizer(self, on):
         if not on:
             return
@@ -226,6 +241,9 @@ class LiveRecorder(Recorder):
 
     # -- fan-out callbacks (capture/audio threads: must never raise) --------
     def _on_frame(self, record, path):
+        o = self.ocr
+        if o is not None:
+            o.on_frame(record, path)
         v = self.vision
         if v is not None:
             v.on_frame(record, path)
@@ -247,7 +265,7 @@ class LiveRecorder(Recorder):
     # -- lifecycle -----------------------------------------------------------
     @property
     def stages(self):
-        return [s for s in (self.transcriber, self.diarizer, self.vision) if s]
+        return [s for s in (self.transcriber, self.diarizer, self.vision, self.ocr) if s]
 
     def start(self):
         self.metrics.start()
@@ -302,6 +320,11 @@ class LiveRecorder(Recorder):
         for s in self.stages:
             if s.is_alive():
                 s.join(timeout=3)
+        if self.ocr:
+            try:
+                self.ocr.finish()
+            except Exception as exc:
+                self.ocr.error = repr(exc)
         if self.metrics:
             self.metrics.stop()
 
@@ -348,6 +371,8 @@ def build_parser():
     p.add_argument("--no-vision", action="store_true")
     p.add_argument("--no-transcribe", action="store_true")
     p.add_argument("--no-diarize", action="store_true")
+    p.add_argument("--no-ocr", action="store_true",
+                   help="skip live OCR (live_ocr.jsonl, ocr_text.json)")
     p.add_argument("--vision-backend", choices=["ollama", "openai", "openvino"], default="ollama",
                    help="openvino runs on Intel iGPU/NPU (see helpers/npu_probe.py)")
     p.add_argument("--vision-device", default="GPU", help="OpenVINO device: GPU, NPU or CPU")
@@ -376,7 +401,7 @@ def main(argv=None):
             monitor=a.monitor, quality=a.quality, audio=not a.no_audio,
             audio_device=a.audio_device, keys=a.keys, system_audio=a.system_audio,
             system_audio_device=a.system_audio_device, vision=not a.no_vision,
-            transcribe=not a.no_transcribe, diarize=not a.no_diarize,
+            transcribe=not a.no_transcribe, diarize=not a.no_diarize, ocr=not a.no_ocr,
             vision_backend=a.vision_backend, vision_model=a.vision_model,
             vision_url=a.vision_url, vision_mode=a.vision_mode,
             vision_max_rate=a.vision_max_rate,
