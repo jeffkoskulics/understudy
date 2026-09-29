@@ -58,7 +58,7 @@ def windows_devices():
         return {"note": "not Windows; skipped"}
     ps = (
         "$n = Get-PnpDevice -PresentOnly | Where-Object { $_.FriendlyName -match "
-        "'AI Boost|NPU|Neural' -or $_.Class -eq 'ComputeAccelerator' } | "
+        "'AI Boost|\bNPU\b|Neural Processing' -or $_.Class -eq 'ComputeAccelerator' } | "
         "Select-Object FriendlyName,Status,Class,InstanceId;"
         "$g = Get-CimInstance Win32_VideoController | "
         "Select-Object Name,DriverVersion,AdapterRAM;"
