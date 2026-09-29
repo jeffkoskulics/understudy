@@ -29,6 +29,39 @@ the recorder.
 | `system.json` (JSON) | metrics | OS, CPU model, cores, RAM, GPU, python, package versions, model names |
 | `bundle-manifest.json` | bundle | files, sizes, sha256, time slice, redactions |
 
+## Additive details (from the workstreams, as implemented)
+
+**metrics.jsonl** records also carry `cpu_sys_pct` (whole-machine CPU, next to
+the process's `cpu_pct`) and `sampler_overhead_s` (time the sampler itself
+took). `gpu` is absent when nothing can be read; otherwise it is either
+`{"devices": [{util_pct, mem_used_mb, mem_total_mb}, ...]}` (NVML or
+nvidia-smi) or, on Apple Silicon, `{"util_pct": n}`. `timings` are per
+sampling interval, then reset. `system.json` also holds `models` and `live`
+(the run settings), written by `LiveRecorder`.
+
+**vision.jsonl skip reasons** (`skipped` is set and `text` may be absent):
+`max-rate` (under the rate cap), `queue-full` (evicted by a newer frame),
+`shutdown` (unprocessed at stop), and `error: <repr>` (the backend failed;
+`latency_s` and empty `text` are included). `mode` is `diff` only when a
+previous analysed frame exists; the first frame is `describe`.
+
+**bundle-manifest.json** fields: `session`, `slice`, `t_start`, `t_end`,
+`files: [{path, size, sha256}]`, `total_bytes`, `redactions: [{file, kind,
+...}]` with kinds `time-slice` (`dropped_records`), `excluded` (`reason`),
+`downsampled` (`kept`, `of`), `clipped` (`offset`), `empty-after-clip`.
+`manifest.json`, `system.json` and `participants.json` are copied as is.
+
+**speaker_id** values: `local` (mic channel), `remote` (system channel with no
+voice clustering), and `S1`, `S2`, ... (clustered remote voices). Live
+transcript `speaker` holds the display name from `participants.json` when
+one is set, else the id.
+
+**manifest.json** (live sessions) adds top-level `profile`, `audio_system`
+(the loopback file's info), `audio_system_offset` (session time of its first
+sample; `null` if nothing was captured) and `live` (`mode`, `fps`, stage
+flags for what actually started, `models`, and `notes` / `stage_errors` when
+a stage degraded). `capture.mode` records `fixed` or `dedup`.
+
 ## Backends
 Both the vision and transcription models go behind a `Backend` with
 `name`, `model`, and `run(payload) -> dict`. Only local backends ship now

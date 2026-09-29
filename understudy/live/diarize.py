@@ -57,7 +57,8 @@ class Diarizer(Stage):
         super().__init__(clock, session, metrics, inbox_size)
         self.embed_fn = default_embed_fn() if embed_fn == "auto" else embed_fn
         self.threshold = threshold
-        self._out = JsonlWriter(os.path.join(session.dir, "speakers.jsonl"))
+        self._out = (session.writer("speakers.jsonl") if hasattr(session, "writer")
+                     else JsonlWriter(os.path.join(session.dir, "speakers.jsonl")))
         self._lock = threading.Lock()
         self._records = []
         self._centroids = []   # [sum_vector, count]

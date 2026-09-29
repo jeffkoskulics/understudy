@@ -89,7 +89,7 @@ def _resolve(session, root):
     return os.path.join(os.path.expanduser(root), session)
 
 
-def main(argv, root="~/understudy"):
+def main(argv, root="~/Recordings"):
     import argparse
     p = argparse.ArgumentParser(prog="understudy name")
     p.add_argument("session", help="session directory or name")

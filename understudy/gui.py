@@ -29,6 +29,7 @@ import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
+from .profiles import PROFILES
 from .record import DEFAULT_ROOT, Recorder
 from .transcribe import DEFAULT_MODEL as TRANSCRIBE_DEFAULT_MODEL
 
@@ -167,9 +168,27 @@ class App(ttk.Frame):
         ttk.Checkbutton(opts, text="Record typed characters (sensitive)",
                         variable=self.full_keys).pack(side="left")
 
+        live = ttk.Frame(box)
+        live.grid(row=5, column=1, sticky="w", padx=(8, 0), pady=(10, 0))
+        ttk.Label(live, text="Profile").pack(side="left")
+        self.profile = tk.StringVar(value="meeting")
+        ttk.Combobox(live, textvariable=self.profile, state="readonly", width=9,
+                     values=sorted(PROFILES)).pack(side="left", padx=(6, 16))
+        self.live_on = tk.BooleanVar(value=False)
+        ttk.Checkbutton(live, text="Live analysis (profile sets rate)",
+                        variable=self.live_on).pack(side="left")
+        live2 = ttk.Frame(box)
+        live2.grid(row=6, column=1, sticky="w", padx=(8, 0), pady=(6, 0))
+        self.name_btn = ttk.Button(live2, text="Name participants",
+                                   command=self._name_participants)
+        self.name_btn.pack(side="left")
+        self.upload_btn = ttk.Button(live2, text="Upload diagnostics",
+                                     command=self._upload)
+        self.upload_btn.pack(side="left", padx=(8, 0))
+
         if self.monitor_error:
             ttk.Label(box, text=self.monitor_error, foreground="#a00").grid(
-                row=4, column=0, columnspan=2, sticky="w", pady=(8, 0))
+                row=7, column=0, columnspan=2, sticky="w", pady=(8, 0))
 
     def _refresh_monitors(self):
         self.monitors, self.monitor_error = list_monitors()
@@ -260,12 +279,20 @@ class App(ttk.Frame):
         want_audio = self.audio_box.current() < len(self.audio_devices)
         device = (self.audio_devices[self.audio_box.current()][0]
                   if want_audio else None)
+        keys = "full" if self.full_keys.get() else "metadata"
         try:
-            self.recorder = Recorder(
-                out=out, name=self.name.get().strip() or None, fps=fps,
-                monitor=self._selected_monitor(), audio=want_audio,
-                audio_device=device,
-                keys="full" if self.full_keys.get() else "metadata")
+            if self.live_on.get():
+                from .live.run import LiveRecorder
+                self.recorder = LiveRecorder(
+                    out=out, name=self.name.get().strip() or None,
+                    profile=self.profile.get(), monitor=self._selected_monitor(),
+                    audio=want_audio, audio_device=device, keys=keys,
+                    tk_master=self.master)
+            else:
+                self.recorder = Recorder(
+                    out=out, name=self.name.get().strip() or None, fps=fps,
+                    monitor=self._selected_monitor(), audio=want_audio,
+                    audio_device=device, keys=keys)
             self.recorder.start()
         except Exception as exc:
             self.recorder = None
@@ -577,6 +604,58 @@ class App(ttk.Frame):
             return
         reveal(path)
 
+    # -- live: participants and diagnostics ---------------------------------
+    def _name_participants(self):
+        from tkinter import simpledialog
+        from . import participants
+        session = self._session()
+        if not session:
+            return
+        rows = participants.summary(session)
+        if not rows:
+            messagebox.showinfo("Understudy", "No speakers were recorded in this session.")
+            return
+        for r in rows:
+            new = simpledialog.askstring(
+                "Name participants",
+                "%s (talked %.0fs, first heard around %.0fs).\nDisplay name:"
+                % (r["speaker_id"], r["talk_s"], r["sample_t"]),
+                initialvalue=r["name"] or "", parent=self.master)
+            if new is None:
+                break
+            if new.strip():
+                participants.name(session, r["speaker_id"], new.strip())
+        self.status.set("Participant names saved.")
+
+    def _upload(self):
+        session = self._session()
+        if not session:
+            return
+        if not messagebox.askokcancel(
+                "Understudy", "Upload frames, audio, transcript and metrics from this "
+                "session to the diagnostics bucket?\n\n(Run 'understudy upload "
+                "--dry-run' to see the file list first.)"):
+            return
+        import shutil
+        import tempfile
+        from . import bundle, upload
+
+        def work():
+            tmp = tempfile.mkdtemp(prefix="understudy-upload-")
+            try:
+                d = bundle.build(session, out=os.path.join(tmp, "bundle"))
+                return upload.upload(d)
+            finally:
+                shutil.rmtree(tmp, ignore_errors=True)
+
+        def done(res):
+            self._busy(False)
+            self.status.set("Uploaded %d files -> %s"
+                            % (len(res["uploaded"]), res["prefix"]))
+
+        self.status.set("Uploading diagnostics...")
+        self._run(work, done)
+
     # -- enablement ------------------------------------------------------
     def _sync_buttons(self):
         """Grey out anything that cannot work yet, so the order is obvious."""
@@ -598,6 +677,8 @@ class App(ttk.Frame):
                             for n in ("audio.m4a", "audio.wav")))
         state(self.merge_btn, ready)
         state(self.pack_btn, ready)
+        state(self.name_btn, ready)
+        state(self.upload_btn, ready)
         exists = ready and os.path.exists(os.path.join(session, "workflow.md"))
         state(self.copy_workflow_btn, exists)
         state(self.show_workflow_btn, exists)

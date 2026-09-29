@@ -32,7 +32,8 @@ class Recorder:
 
     def __init__(self, out=DEFAULT_ROOT, name=None, fps=2.0, monitor=1,
                  min_change=0.004, quality=92, heartbeat=120.0,
-                 audio=True, audio_device=None, keys="metadata"):
+                 audio=True, audio_device=None, keys="metadata",
+                 mode="dedup", on_frame=None, on_chunk=None):
         self.clock = Clock()
         self.session = Session(out, name)
         self.fps = fps
@@ -41,12 +42,15 @@ class Recorder:
         frontmost = get_frontmost()
         self.cap = CaptureLoop(self.clock, self.session, monitor=monitor, fps=fps,
                                min_change=min_change, heartbeat=heartbeat,
-                               jpeg_quality=quality, frontmost=frontmost)
+                               jpeg_quality=quality, frontmost=frontmost,
+                               mode=mode, on_frame=on_frame)
         self.ev = EventRecorder(self.clock, self.session.events, frontmost,
                                 key_mode=keys, on_activity=self.cap.on_activity)
-        self.audio = (AudioRecorder(self.clock, self.session.audio_path, audio_device)
+        self.audio = (AudioRecorder(self.clock, self.session.audio_path, audio_device,
+                                  on_chunk=on_chunk)
                       if audio else None)
-        self._settings = {"min_change": min_change, "heartbeat": heartbeat,
+        self.mode = mode
+        self._settings = {"mode": mode, "min_change": min_change, "heartbeat": heartbeat,
                           "jpeg_quality": quality}
         self._stopped = False
 
@@ -73,10 +77,13 @@ class Recorder:
         self.cap.stop()
         if self.audio:
             self.audio.stop()
+        self._stop_sources()
+        if self.audio:
             self.audio.join(timeout=5)
         self.cap.join(timeout=5)
+        self._stop_stages()
 
-        self.session.write_manifest({
+        manifest = {
             "name": self.session.name,
             "started_at": self.clock.start_iso,
             "duration": round(self.clock.t(), 3),
@@ -88,9 +95,22 @@ class Recorder:
                        "moves_suppressed": self.cap.moves_suppressed},
             "events": {"key_mode": self.keys},
             "audio": self.audio.info() if self.audio else None,
-        })
+        }
+        manifest.update(self._manifest_extra())
+        self.session.write_manifest(manifest)
         self.session.close()
         return self.session.dir
+
+    # Hooks for subclasses (see live/run.py). Sources are asked to stop before
+    # any are joined; stages are stopped only after every source has stopped.
+    def _stop_sources(self):
+        pass
+
+    def _stop_stages(self):
+        pass
+
+    def _manifest_extra(self):
+        return {}
 
 
 def build_parser():

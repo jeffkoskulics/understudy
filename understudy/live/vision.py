@@ -63,7 +63,8 @@ class VisionAnalyzer(Stage):
             raise ValueError("mode must be 'describe' or 'diff'")
         self.backend = backend or OllamaBackend()
         self.mode, self.max_rate, self.max_side = mode, max_rate, max_side
-        self.out = JsonlWriter(os.path.join(session.dir, "vision.jsonl"))
+        self.out = (session.writer("vision.jsonl") if hasattr(session, "writer")
+                    else JsonlWriter(os.path.join(session.dir, "vision.jsonl")))
         self._lock = threading.Lock()
         self._last_start = None      # monotonic start of last analysis
         self._prev = None            # (record, path) last analysed frame

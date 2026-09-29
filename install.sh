@@ -32,6 +32,9 @@ command -v python3 >/dev/null 2>&1 || { echo "python3 3.9+ is required"; exit 1;
 ./.venv/bin/pip install --upgrade pip -q
 ./.venv/bin/pip install -r requirements.txt -q
 
+./.venv/bin/pip install -r requirements-upload.txt -q || \
+    echo "Could not install upload support (boto3); 'understudy upload' will not work."
+
 if [ "$with_whisper" = yes ]; then
     echo "Installing faster-whisper for on-device transcription..."
     ./.venv/bin/pip install -r requirements-whisper.txt -q
@@ -59,3 +62,7 @@ else
     echo "transcription instead (a few hundred MB more):"
     echo "    $root/bin/understudy transcribe --install"
 fi
+echo
+echo "Live analysis (understudy live) describes the screen with a local vision"
+echo "model. Install Ollama from https://ollama.com, then:"
+echo "    ollama pull qwen2.5vl:7b"
