@@ -94,7 +94,7 @@ right-click it and choose **Run with PowerShell**. If PowerShell refuses to run
 the script, allow it for that one session:
 
 ```powershell
-Set-ExecutionPolicy -Scope Process -Bypass
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 ```
 
 You need [Python 3.9+](https://www.python.org/downloads/windows/) (tick *Add
