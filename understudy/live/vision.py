@@ -57,12 +57,18 @@ class VisionAnalyzer(Stage):
     name = "vision"
 
     def __init__(self, clock, session, backend=None, mode="describe",
-                 max_rate=1.0, max_side=1280, metrics=None, inbox_size=2):
+                 max_rate=1.0, max_side=1280, metrics=None, inbox_size=2,
+                 on_change=False, context=None):
         super().__init__(clock, session, metrics=metrics, inbox_size=inbox_size)
         if mode not in ("describe", "diff"):
             raise ValueError("mode must be 'describe' or 'diff'")
         self.backend = backend or OllamaBackend()
         self.mode, self.max_rate, self.max_side = mode, max_rate, max_side
+        # on_change: only frames capture would have kept in dedup mode (non-empty
+        # `reasons`) are worth a model call; the rest are logged "unchanged".
+        self.on_change = on_change
+        self.context = context       # one line about the domain, prepended to prompts
+        self._last_accept = None     # monotonic time the last frame was queued
         self.out = (session.writer("vision.jsonl") if hasattr(session, "writer")
                     else JsonlWriter(os.path.join(session.dir, "vision.jsonl")))
         self._lock = threading.Lock()
@@ -76,7 +82,23 @@ class VisionAnalyzer(Stage):
         self.offer((record, path))
 
     def offer(self, item):
-        """Like Stage.offer, but the evicted frame gets a skipped record."""
+        """Like Stage.offer, but every frame not analysed gets a skipped record.
+
+        The change and rate gates run here, at arrival, so a skip is logged with
+        the reason that actually decided it: a frame turned away by the rate cap
+        reads "max-rate", and only a frame displaced from the queue while the
+        model is still busy reads "queue-full".
+        """
+        record = item[0]
+        if self.on_change and "reasons" in record and not record["reasons"]:
+            self._skip(record, "unchanged")
+            return
+        now = time.monotonic()
+        if (self.max_rate and self._last_accept is not None
+                and now - self._last_accept < 1.0 / self.max_rate):
+            self._skip(record, "max-rate")
+            return
+        self._last_accept = now
         try:
             self.inbox.put_nowait(item)
         except queue.Full:
@@ -123,6 +145,8 @@ class VisionAnalyzer(Stage):
                 prompt = DIFF_PROMPT.format(hint=_hint(record.get("bbox")))
             else:
                 prompt = DESCRIBE_PROMPT
+            if self.context:
+                prompt = "Context: %s\n\n%s" % (self.context, prompt)
             images.append(encode_image(path, self.max_side))
             text = self.backend.run({"prompt": prompt, "images": images})["text"]
         except Exception as exc:

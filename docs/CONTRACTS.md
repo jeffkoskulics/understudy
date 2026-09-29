@@ -40,7 +40,7 @@ sampling interval, then reset. `system.json` also holds `models` and `live`
 (the run settings), written by `LiveRecorder`.
 
 **vision.jsonl skip reasons** (`skipped` is set and `text` may be absent):
-`max-rate` (under the rate cap), `queue-full` (evicted by a newer frame),
+`unchanged` (`--vision-on-change` and capture saw no change), `max-rate` (arrived under the rate cap), `queue-full` (accepted, then displaced by a newer frame while the model was busy),
 `shutdown` (unprocessed at stop), and `error: <repr>` (the backend failed;
 `latency_s` and empty `text` are included). `mode` is `diff` only when a
 previous analysed frame exists; the first frame is `describe`.

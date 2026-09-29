@@ -132,8 +132,29 @@ def test_max_rate_and_queue_skips(tmp_path):
     v.offer(({"t": 4, "file": "d"}, a))
     v.stop()
     reasons = [r.get("skipped") for r in lines(tmp_path)]
-    assert reasons == [None, "max-rate", "queue-full", "shutdown"]
-    assert v.dropped == 1 and len(be.calls) == 1
+    assert reasons == [None, "max-rate", "max-rate", "shutdown"]
+    assert v.dropped == 0 and len(be.calls) == 1
+
+
+def test_queue_full_only_when_backlogged(tmp_path):
+    v = VisionAnalyzer(None, Sess(tmp_path), backend=Fake(), max_rate=0, inbox_size=1)
+    a = img(tmp_path)
+    v.offer(({"t": 1, "file": "a"}, a))
+    v.offer(({"t": 2, "file": "b"}, a))
+    v.stop()
+    assert [r.get("skipped") for r in lines(tmp_path)] == ["queue-full", "shutdown"]
+
+
+def test_on_change_skips_unchanged(tmp_path):
+    be = Fake()
+    v = VisionAnalyzer(None, Sess(tmp_path), backend=be, max_rate=0, on_change=True)
+    a = img(tmp_path)
+    v.offer(({"t": 1, "file": "a", "reasons": []}, a))
+    v.offer(({"t": 2, "file": "b", "reasons": ["diff"]}, a))
+    v.step(v.inbox.get_nowait())
+    v.stop()
+    r = lines(tmp_path)
+    assert r[0]["skipped"] == "unchanged" and r[1]["frame"] == "b" and "skipped" not in r[1]
 
 
 def test_error_recorded(tmp_path):

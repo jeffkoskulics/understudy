@@ -100,12 +100,13 @@ class _Tail:
 
 class LiveRecorder(Recorder):
     def __init__(self, out=DEFAULT_ROOT, name=None, profile="meeting", mode=None,
-                 fps=None, monitor=1, quality=92, audio=True, audio_device=None,
+                 fps=None, monitor=1, quality=80, audio=True, audio_device=None,
                  keys="metadata", system_audio=None, system_audio_device=None,
                  vision=True, transcribe=True, diarize=True,
                  vision_backend="ollama", vision_model=None, vision_url=None,
                  vision_mode="describe", vision_max_rate=1.0,
                  vision_timeout=120.0, vision_max_side=1280,
+                 vision_on_change=False, vision_context=None,
                  whisper_model=None, indicator=None, tk_master=None):
         prof = get_profile(profile)
         want_indicator = prof.pop("indicator")
@@ -137,7 +138,8 @@ class LiveRecorder(Recorder):
         self._build_diarizer(diarize)
         self._build_transcriber(transcribe, whisper_model)
         self._build_vision(vision, vision_backend, vision_model, vision_url,
-                           vision_mode, vision_max_rate, vision_timeout, vision_max_side)
+                           vision_mode, vision_max_rate, vision_timeout, vision_max_side,
+                           vision_on_change, vision_context)
         if self.want_system:
             self.system = SystemAudioRecorder(
                 self.clock, os.path.join(self.session.dir, "audio_system.wav"),
@@ -184,7 +186,8 @@ class LiveRecorder(Recorder):
             speaker=self.diarizer.speaker_at if self.diarizer else None)
 
     def _build_vision(self, on, kind, model, url, mode, max_rate,
-                      timeout=120.0, max_side=1280):
+                      timeout=120.0, max_side=1280, on_change=False,
+                      context=None):
         if not on:
             return
         from .backends.vision_local import OllamaBackend, OpenAICompatBackend
@@ -198,6 +201,7 @@ class LiveRecorder(Recorder):
         backend = cls(**kw)
         analyzer = VisionAnalyzer(self.clock, self.session, backend, mode=mode,
                                   max_rate=max_rate, max_side=max_side,
+                                  on_change=on_change, context=context,
                                   metrics=self.metrics)
         try:
             analyzer.probe()
@@ -323,7 +327,8 @@ def build_parser():
     p.add_argument("--out", default=DEFAULT_ROOT)
     p.add_argument("--name", default=None)
     p.add_argument("--monitor", type=int, default=1)
-    p.add_argument("--quality", type=int, default=92)
+    p.add_argument("--quality", type=int, default=80,
+                   help="JPEG quality of saved frames (80 is about half the size of 92)")
     p.add_argument("--keys", choices=["metadata", "full"], default="metadata")
     p.add_argument("--duration", type=float, default=None,
                    help="stop automatically after N seconds")
@@ -348,6 +353,10 @@ def build_parser():
                    help="seconds to wait for one frame's analysis")
     p.add_argument("--vision-max-side", type=int, default=1280,
                    help="downscale frames to this many pixels on the long side")
+    p.add_argument("--vision-context", default=None,
+                   help='one line of domain context, e.g. "semiconductor wafer prober software"')
+    p.add_argument("--vision-on-change", action="store_true",
+                   help="only analyse frames where the screen changed (logged 'unchanged' otherwise)")
     p.add_argument("--whisper-model", default=None)
     return p
 
@@ -364,7 +373,9 @@ def main(argv=None):
             vision_backend=a.vision_backend, vision_model=a.vision_model,
             vision_url=a.vision_url, vision_mode=a.vision_mode,
             vision_max_rate=a.vision_max_rate,
-            vision_timeout=a.vision_timeout, vision_max_side=a.vision_max_side, whisper_model=a.whisper_model,
+            vision_timeout=a.vision_timeout, vision_max_side=a.vision_max_side,
+            vision_on_change=a.vision_on_change, vision_context=a.vision_context,
+            whisper_model=a.whisper_model,
             indicator=False if a.no_indicator else None)
     except ValueError as exc:
         sys.exit(str(exc))

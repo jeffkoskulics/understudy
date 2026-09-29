@@ -117,8 +117,10 @@ class LiveTranscriber(Stage):
         words = [w for w in words if mid(w) > b.final_until]
         fin = [w for w in words if mid(w) <= final_to]
         part = [w for w in words if mid(w) > final_to]
-        self._write(source, part, False)
+        # final first, so the file reads in time order; a partial is superseded
+        # by the next window's final covering the same span
         self._write(source, fin, True)
+        self._write(source, part, False)
         b.final_until = max(b.final_until, final_to)
 
     def _write(self, source, words, final):
