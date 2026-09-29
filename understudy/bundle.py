@@ -8,7 +8,7 @@ import wave
 import zipfile
 
 AUDIO_FILES = (("audio.wav", None), ("audio_system.wav", "audio_system_offset"))
-PASSTHROUGH = ("manifest.json", "system.json", "participants.json")
+PASSTHROUGH = ("manifest.json", "system.json", "participants.json", "ocr_text.json")
 
 
 def _sha256(path):

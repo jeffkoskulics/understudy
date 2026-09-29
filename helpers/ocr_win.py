@@ -47,6 +47,41 @@ def emit(obj):
     sys.stdout.flush()
 
 
+async def _software_bitmap(dec, xf, scale):
+    """Decode to BGRA8, scaled if needed.
+
+    WinRT overloads GetSoftwareBitmapAsync by arity; pywinrt releases disagree
+    on how to expose that. Some accept all arities under one name, newer ones
+    reject the 5-argument call ("Invalid parameter count") and publish it under
+    its metadata overload name instead. Try the spellings in turn.
+    """
+    fmt, alpha = BitmapPixelFormat.BGRA8, BitmapAlphaMode.PREMULTIPLIED
+    full = (fmt, alpha, xf, ExifOrientationMode.IGNORE_EXIF_ORIENTATION,
+            ColorManagementMode.DO_NOT_COLOR_MANAGE)
+    for name in ("get_software_bitmap_transformed_async", "get_software_bitmap_async"):
+        fn = getattr(dec, name, None)
+        if fn is None:
+            continue
+        try:
+            return await fn(*full)
+        except (TypeError, RuntimeError) as exc:
+            if "parameter count" not in str(exc) and not isinstance(exc, TypeError):
+                raise
+    if scale < 1.0:
+        raise RuntimeError("this pywinrt cannot scale bitmaps; image exceeds OCR limit")
+    # Frame already fits the OCR engine: the 2-argument conversion is enough.
+    for name in ("get_software_bitmap_converted_async", "get_software_bitmap_async"):
+        fn = getattr(dec, name, None)
+        if fn is None:
+            continue
+        try:
+            return await fn(fmt, alpha)
+        except (TypeError, RuntimeError) as exc:
+            if "parameter count" not in str(exc) and not isinstance(exc, TypeError):
+                raise
+    return await dec.get_software_bitmap_async()
+
+
 async def ocr(engine, path):
     full = os.path.abspath(path)
     try:
@@ -64,10 +99,7 @@ async def ocr(engine, path):
             xf.scaled_width = max(1, int(w * scale))
             xf.scaled_height = max(1, int(h * scale))
             xf.interpolation_mode = BitmapInterpolationMode.FANT
-        bmp = await dec.get_software_bitmap_async(
-            BitmapPixelFormat.BGRA8, BitmapAlphaMode.PREMULTIPLIED, xf,
-            ExifOrientationMode.IGNORE_EXIF_ORIENTATION,
-            ColorManagementMode.DO_NOT_COLOR_MANAGE)
+        bmp = await _software_bitmap(dec, xf, scale)
         result = await engine.recognize_async(bmp)
     except Exception as e:
         return {"file": path, "error": str(e)}
