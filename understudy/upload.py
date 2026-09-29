@@ -156,6 +156,30 @@ def upload(bundle_dir, dry_run=False, progress=None, client=None, cfg=None, host
     return res
 
 
+SHARE_MAX_HOURS = 168   # SigV4 presigned URLs cannot outlive 7 days
+
+
+def share(bundle_dir, prefix, hours=72, client=None, cfg=None):
+    """Zip the bundle, upload it beside the files, return a time-limited download link.
+
+    The link lets anyone holding it download this one zip until it expires, and
+    nothing else -- so it can be pasted into a chat without handing over a key.
+    """
+    hours = max(1, min(int(hours), SHARE_MAX_HOURS))
+    cfg = cfg or load_config()
+    client = client or make_client(cfg)
+    tmp = tempfile.mkdtemp(prefix="understudy-share-")
+    try:
+        zpath = shutil.make_archive(os.path.join(tmp, "bundle"), "zip", bundle_dir)
+        key = prefix + "bundle.zip"
+        client.upload_file(zpath, cfg["bucket"], key)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return client.generate_presigned_url(
+        "get_object", Params={"Bucket": cfg["bucket"], "Key": key},
+        ExpiresIn=hours * 3600)
+
+
 def _print_progress(rel, status, size):
     print("%-13s %10d  %s" % (status, size, rel))
 
@@ -174,6 +198,9 @@ def main(argv=None):
     bundle.add_slice_args(p)
     p.add_argument("--configure", action="store_true", help="enter and test R2 credentials")
     p.add_argument("--dry-run", action="store_true", help="list what would be sent")
+    p.add_argument("--share", nargs="?", type=int, const=72, default=None, metavar="HOURS",
+                   help="also upload a zip and print a download link valid for HOURS "
+                        "(default 72, max 168) to paste into a chat")
     a = p.parse_args(argv)
     tmp = tempfile.mkdtemp(prefix="understudy-upload-")
     try:
@@ -186,6 +213,10 @@ def main(argv=None):
             return 1
         print("%s%d uploaded, %d skipped -> %s" % ("(dry run) " if a.dry_run else "",
               len(res["uploaded"]), len(res["skipped"]), res["prefix"]))
+        if a.share and not a.dry_run:
+            url = share(d, res["prefix"], a.share)
+            print("\nDownload link (valid %d h, gives access to this bundle only):\n%s"
+                  % (max(1, min(a.share, SHARE_MAX_HOURS)), url))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     return 0

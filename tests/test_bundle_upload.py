@@ -68,6 +68,10 @@ class Stub:
     def delete_object(self, Bucket, Key):
         self.objs.pop(Key, None)
 
+    def generate_presigned_url(self, op, Params, ExpiresIn):
+        self.presigned = (op, Params, ExpiresIn)
+        return "https://example/%s?exp=%d" % (Params["Key"], ExpiresIn)
+
 
 def test_upload_skip_and_index_last(tmp_path):
     out = bundle.build(make_session(tmp_path), out=str(tmp_path / "b"))
@@ -98,3 +102,12 @@ def test_config_roundtrip_and_env(tmp_path, monkeypatch):
     monkeypatch.setenv("UNDERSTUDY_R2_BUCKET", "other")
     assert upload.load_config()["bucket"] == "other"
     assert not c.objs
+
+
+def test_share_uploads_zip_and_caps_expiry(tmp_path):
+    out = bundle.build(make_session(tmp_path), out=str(tmp_path / "b"))
+    c = Stub()
+    url = upload.share(out, "bundles/h/s1/full/", hours=1000, client=c, cfg={"bucket": "b"})
+    assert "bundles/h/s1/full/bundle.zip" in c.objs
+    assert c.presigned[2] == 168 * 3600
+    assert url.startswith("https://example/bundles/h/s1/full/bundle.zip")
