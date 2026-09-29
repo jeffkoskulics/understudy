@@ -18,7 +18,7 @@ pack.CONF_MIN filters nothing on Windows.
 Windows OCR boxes words, not lines, so a line's box is the union of its words.
 
 Requires, in the same interpreter that runs understudy:
-  python -m pip install winrt-runtime winrt-Windows.Foundation
+  python -m pip install winrt-runtime winrt-Windows.Foundation winrt-Windows.Foundation.Collections
     winrt-Windows.Globalization winrt-Windows.Graphics.Imaging
     winrt-Windows.Media.Ocr winrt-Windows.Storage winrt-Windows.Storage.Streams
 """
