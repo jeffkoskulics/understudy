@@ -42,8 +42,8 @@ File ownership is split so agents don't collide. Only the integrator edits
 | C | **Streaming transcription** | new `live_transcribe.py` | faster-whisper over a sliding window (about 5 s chunks with overlap) that emits partial and final segments. The existing batch `transcribe.py` stays as the accurate pass. |
 | D | **Vision analysis** | new `vision.py`, `vision_backends/` | Pluggable backend: local (Ollama or llama.cpp running Qwen2.5-VL / Gemma 3) and optionally a cloud API. Modes: `describe` and `diff` (previous frame + current frame + bounding box from capture). Bounded queue that drops or skips frames under load and logs every drop. |
 | E | **Instrumentation** | new `metrics.py` | psutil sampler thread plus optional GPU sampling (NVML / `powermetrics`), plus a timing context manager other modules can import. Writes `metrics.jsonl` and a machine profile `system.json` (CPU model, cores, RAM, GPU, OS, model names, versions). |
-| F | **Bundle + upload client** | new `bundle.py`, `upload.py` | Package a session or a time slice, optionally downsample, add a manifest with hashes, and upload in chunks with resume. Consent prompt and a `--dry-run` that lists what would be sent. |
-| G | **Ingest endpoint** | new `server/` (Cloudflare Worker + R2 + D1 index) | Authenticated upload (per-install token), multipart to R2, one D1 row per bundle, and a small listing page for us to review. |
+| F | **Bundle + upload client** | new `bundle.py`, `upload.py` | Package a session or a time slice, optionally downsample, add a manifest with hashes, and upload directly to R2 (S3 API via boto3, multipart). Includes `docs/R2-SETUP.md` and `understudy upload --configure`, and a `--dry-run` that lists what would be sent. |
+| G | **Speaker attribution (optional)** | new `diarize.py`, `participants.py` | First pass: attribute by channel (mic = local user, system = remote). Second: local speaker embeddings (sherpa-onnx / resemblyzer, no HF token) that cluster the remote voices into `S1, S2…`. A `participants.json` maps ids to names and can be edited in the GUI or CLI (`understudy name S2 "Maria"`). Writes `speakers.jsonl`, and live_transcribe tags segments with `speaker`. |
 | H | **Integrator** | `record.py`, `__main__.py`, `gui.py`, `install.*`, `requirements-*.txt`, README | Wire A–F into `understudy live`, add GUI toggles and extend the installers. Runs last, or continuously once interfaces are stubbed. |
 
 **Order:** first I write the shared interfaces (the JSONL schemas, a
@@ -51,18 +51,15 @@ File ownership is split so agents don't collide. Only the integrator edits
 run in parallel and H follows. Each agent works in its own worktree and
 branch, adds tests for its module, and opens a PR.
 
-## Decisions needed before I launch agents
+## Decisions (2026-09-29)
 
-1. **Vision model:** local only (Ollama with Qwen2.5-VL 7B needs a GPU or
-   Apple Silicon to keep up with 2 fps; CPU-only will not) or a cloud API
-   allowed too? Realistically, local plus CPU means analysing roughly one
-   frame every few seconds, not 2–4 per second.
-2. **"Audio-capable" LLM:** is local whisper enough for audio, or do you
-   also want audio clips sent to a multimodal model?
-3. **Meetings and consent:** recording other participants' audio and screens
-   is subject to all-party consent laws in some places. I propose a
-   visible recording indicator, a consent checkbox, and uploads that are
-   opt-in per session, with an option to strip audio or faces.
-4. **Endpoint hosting:** a Cloudflare Worker + R2 on your account (the
-   connector is already attached here)? And how should the upload token
-   reach testers?
+1. **Upload:** directly to an R2 bucket on Jeff's Cloudflare account. There
+   is no Worker for now. Credentials are pasted into
+   `understudy upload --configure` on each laptop.
+2. **Privacy:** a visible recording indicator in meeting mode, and no consent
+   checkbox.
+3. **Models:** local first for both vision and audio. Backends are
+   pluggable so the stream can later go to a remote model (left undefined
+   for now).
+4. **Participants:** optionally name participants and attribute audio to
+   them (workstream G).
