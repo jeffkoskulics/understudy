@@ -106,7 +106,7 @@ class LiveRecorder(Recorder):
                  vision_backend="ollama", vision_model=None, vision_url=None,
                  vision_mode="describe", vision_max_rate=1.0,
                  vision_timeout=120.0, vision_max_side=1280,
-                 vision_on_change=False, vision_context=None,
+                 vision_on_change=False, vision_context=None, vision_device="GPU",
                  whisper_model=None, indicator=None, tk_master=None):
         prof = get_profile(profile)
         want_indicator = prof.pop("indicator")
@@ -137,6 +137,7 @@ class LiveRecorder(Recorder):
         self.metrics = Metrics(self.session.dir, self.clock)
         self._build_diarizer(diarize)
         self._build_transcriber(transcribe, whisper_model)
+        self._vision_device = vision_device
         self._build_vision(vision, vision_backend, vision_model, vision_url,
                            vision_mode, vision_max_rate, vision_timeout, vision_max_side,
                            vision_on_change, vision_context)
@@ -192,13 +193,17 @@ class LiveRecorder(Recorder):
             return
         from .backends.vision_local import OllamaBackend, OpenAICompatBackend
         from .vision import VisionAnalyzer
-        cls = OllamaBackend if kind == "ollama" else OpenAICompatBackend
         kw = {"timeout": timeout}
         if model:
             kw["model"] = model
-        if url:
-            kw["host"] = url
-        backend = cls(**kw)
+        if kind == "openvino":
+            from .backends.vision_openvino import OpenVINOBackend
+            backend = OpenVINOBackend(device=self._vision_device, **kw)
+        else:
+            cls = OllamaBackend if kind == "ollama" else OpenAICompatBackend
+            if url:
+                kw["host"] = url
+            backend = cls(**kw)
         analyzer = VisionAnalyzer(self.clock, self.session, backend, mode=mode,
                                   max_rate=max_rate, max_side=max_side,
                                   on_change=on_change, context=context,
@@ -343,7 +348,9 @@ def build_parser():
     p.add_argument("--no-vision", action="store_true")
     p.add_argument("--no-transcribe", action="store_true")
     p.add_argument("--no-diarize", action="store_true")
-    p.add_argument("--vision-backend", choices=["ollama", "openai"], default="ollama")
+    p.add_argument("--vision-backend", choices=["ollama", "openai", "openvino"], default="ollama",
+                   help="openvino runs on Intel iGPU/NPU (see helpers/npu_probe.py)")
+    p.add_argument("--vision-device", default="GPU", help="OpenVINO device: GPU, NPU or CPU")
     p.add_argument("--vision-model", default=None)
     p.add_argument("--vision-url", default=None)
     p.add_argument("--vision-mode", choices=["describe", "diff"], default="describe")
@@ -374,7 +381,7 @@ def main(argv=None):
             vision_url=a.vision_url, vision_mode=a.vision_mode,
             vision_max_rate=a.vision_max_rate,
             vision_timeout=a.vision_timeout, vision_max_side=a.vision_max_side,
-            vision_on_change=a.vision_on_change, vision_context=a.vision_context,
+            vision_on_change=a.vision_on_change, vision_context=a.vision_context, vision_device=a.vision_device,
             whisper_model=a.whisper_model,
             indicator=False if a.no_indicator else None)
     except ValueError as exc:
